@@ -283,9 +283,9 @@ class dynsiz{
     }
 };
 void primeShortener(dynsiz* nom, dynsiz* denom){
-    int primes[]={3,5,7,11,13,17,19,23,29};//2 omitted as denominator is never even
+    int primes[]={2,3,5,7,11,13,17,19,23,29};//((2 omitted as denominator is never even))
     dynsiz pr(1),nomdiv(1),dendiv(1),nommod(1),denmod(1);
-    for(int i=0;i<9;i++){
+    for(int i=0;i<10;i++){
         pr.ds[0] = primes[i];
         nomdiv=(*nom) / pr;
         dendiv=(*denom) / pr;
@@ -304,13 +304,14 @@ void primeShortener(dynsiz* nom, dynsiz* denom){
             dendiv=(*denom) / pr;
             nommod=*(nom->div_remp);
             denmod=*(denom->div_remp);
-            
         }
     }
 }
 void nilakantha(){
     //Initially: p_nom=3, p_den=1, fac0=2
-    dynsiz p_nom(1),p_den(1),add_den(1),fac0(1),fac1(1),fac2(1);
+    //π = 3+∑_{n=0}^∞ (-1)^n*4/([2n+2][2n+3][2n+4])
+    //N/D+a/b = Nb/Db+Da/Db = (Nb+Da)/Db
+    dynsiz p_nom(1),p_den(1),add_nom(1),add_den(1),fac0(1),fac1(1),fac2(1);
     dynsiz one(1),two(1),four(1);
     one.ds[0]=1; two.ds[0]=2; four.ds[0]=4;
     p_nom.ds[0]=3;
@@ -318,20 +319,37 @@ void nilakantha(){
     fac0.ds[0]=2;
     
     fac1=fac0; fac1+=one;
-    fac2=fac0; fac1+=two;
-    for(int i=0;i<5;i++){
+    fac2=fac0; fac2+=two;
+    
+    dynsiz ten(1); ten.ds[0]=10;
+    for(int i=0;i<101;i++){// 3/1, 19/6, 47/15, 1321/420, 
         add_den=fac0;
         add_den*=fac1;
         add_den*=fac2;
-        fac0.printHex();
-        fac1.printHex();
-        fac2.printHex();
-        add_den.printHex();
-        printf("\n");
+        add_nom=p_den; add_nom*=four;
+        p_nom*=add_den; p_den*=add_den;
+        //printf("add_nom: "); add_nom.printHex();
+        //printf("add_den: "); add_den.printHex();
+        if(i%2==0)
+            p_nom+=add_nom;
+        else
+            p_nom-=add_nom;
+        primeShortener(&p_den,&p_nom);
+        
+        /*if(i==53 || i==99){
+            p_nom.printHex();
+            p_den.printHex();
+        }
+        if(i>50){
+          p_nom.digitDiv(p_den,ten);
+          printf(", (%d)\n",i);
+        }*/
+        
         fac0+=two;
         fac1+=two;
         fac2+=two;
     }
+    p_nom.digitDiv(p_den,ten);
 }
 void pi_series(dynsiz f,std::ofstream* ologfile=nullptr){//Wallis product
     //Initially: f=1, nom=2, den=1
