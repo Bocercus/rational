@@ -118,11 +118,11 @@ class dynsiz{
         word c=0;
         for(int i=0;i<ds.size();i++){
             if(plus){
-                sum=ds[i]+b.ds[i]+c; c=0;
-                if(sum<ds[i]) c=1;
+                sum=ds[i]+b.ds[i]+c;
+                if(sum+c<ds[i]) c=1; else c=0; //Set carry if overflow
             }else{
-                sum=ds[i]-b.ds[i]-c; c=0;
-                if(sum>ds[i]) c=1;
+                sum=ds[i]-b.ds[i]-c; //Difference (sum, if b is negative)
+                if(sum+c>ds[i]) c=1; else c=0; //Set carry if overflow
             }
             //printf("sum: %d, c: %d\n",sum,c);
             ds[i]=sum;
@@ -181,11 +181,8 @@ class dynsiz{
             //printf("i: %d, ds[i]: %d\n",i,ds[i]);
             for(j=wordbits-1;j>=0;j--){ //for(j=0;j<wordbits;j++){
                 //printf("j: %d, bit: %d %d\nR:",j,ds[i] & (1<<j),(ds[i] & (1<<j))>0);
-                //(*div_remp).printHex();
                 (*div_remp)<<=1;
-                //div_remp->printHex();
-                (*div_remp).ds[0] |= (ds[i] & (1<<j))>0;
-                //div_remp->printHex();
+                (*div_remp).ds[0] |= (ds[i] & (1<<j))>0; //Assign jth bit of ds to least sig. bit of remainder
                 if(!((*div_remp)<d)){
                     (*div_remp)-=d;
                     Q.ds[0]|=1; //printf("1");
@@ -225,19 +222,19 @@ class dynsiz{
         return *div_remp;
     }
     void digitDiv(dynsiz b,dynsiz base){//Divide number by b and express it as number in given base
-        dynsiz q=operator/(b);
-        //dynsiz one(1); one.ds[0]=1;
+        ensureEqLen(&b);
         
         //Finding digits after period
         std::vector<word> fdigits;
+        dynsiz q=operator/(b); //Actual integer division
         dynsiz r=*div_remp;
         dynsiz r1(1);
-        int maxdigits=40,mxdc=0;
-        while(!(r.eqzero()) && mxdc<maxdigits){
+        int maxdigits=20,mxdc=0; // Max digit counter (second)
+        while(!(r.eqzero()) && mxdc<maxdigits){//Generate until no digits left or maxdigit digits have been generated
             r*=base;
-            r1=r/b;
+            r1=r/b; //Finding digit through quotient ...
             fdigits.push_back(r1.ds[0]);
-            r=*(r.div_remp);
+            r=*(r.div_remp); //... and using the remainder to find the later digits
             mxdc++;
         }
         
@@ -322,7 +319,7 @@ void nilakantha(){
     fac2=fac0; fac2+=two;
     
     dynsiz ten(1); ten.ds[0]=10;
-    for(int i=0;i<101;i++){// 3/1, 19/6, 47/15, 1321/420, 
+    for(int i=0;i<55;i++){// 3/1, 19/6, 47/15, 1321/420, 
         add_den=fac0;
         add_den*=fac1;
         add_den*=fac2;
@@ -336,10 +333,7 @@ void nilakantha(){
             p_nom-=add_nom;
         primeShortener(&p_den,&p_nom);
         
-        /*if(i==53 || i==99){
-            p_nom.printHex();
-            p_den.printHex();
-        }
+        /*
         if(i>50){
           p_nom.digitDiv(p_den,ten);
           printf(", (%d)\n",i);
@@ -348,6 +342,8 @@ void nilakantha(){
         fac0+=two;
         fac1+=two;
         fac2+=two;
+        printf("%d: ",i);
+        p_nom.digitDiv(p_den,ten);//(previously) weird i's: 22, 53 (now fixed)
     }
     p_nom.digitDiv(p_den,ten);
 }
