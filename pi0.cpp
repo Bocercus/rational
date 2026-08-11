@@ -1,18 +1,20 @@
 #include <stdio.h>
 #include <iostream>
-#include <sstream>
+//#include <sstream>
 #include <string>
 #include <new>
 #include <vector>
 #include <stdint.h>
 #include <fstream>
-#include <stdexcept>
+//#include <stdexcept>
 #include <chrono>
+#include <filesystem>
 
 typedef uint8_t word;
 typedef uint16_t dblword;
 #define wordones 0xff
 #define wordbits 8
+#define carryones 0xff00
 
 inline int iabs(int x) {return (x<0?-x:x);}
 inline int ramp(int x) {return (x>0?x:0);}
@@ -23,9 +25,28 @@ class dynsiz{
     public:
     std::vector<word> ds; //Number array ( ds[0] least significant figure )
     dynsiz* div_remp; //Pointer to remainder of integer division
-    dynsiz(int n){
+    dynsiz(int n){//Init n words filled with zeros
         ds.assign(n,0);
         div_remp=nullptr;
+    }
+    dynsiz(std::string numstr){
+        div_remp=nullptr;
+        if(numstr.substr(0,2)!="0x" || numstr.length()<3){
+            printf("Please use hexadecimal and start string with \"0x\"\n");
+            ds.assign(1,0); //**Maybe throw exception instead
+            return;
+        }
+        if(numstr.length()%2==1){
+            //printf("Uneven length. Turning");
+            numstr="0"+numstr.substr(2,numstr.length()-2);//Add initial padding zero for uneven strings and remove 0x
+        }else{
+            numstr=numstr.substr(2,numstr.length()-2);//Remove 0x
+        }
+        int L=numstr.length()/2;
+        ds.assign(L,0);
+        for(int i=0;i<L;i++){
+            ds[L-i-1]=std::stoi(numstr.substr(2*i,2),nullptr,16);
+        }
     }
     ~dynsiz(){
         delete div_remp;
@@ -106,7 +127,7 @@ class dynsiz{
             if(i>0)
                 ds[i] |= (bsds[i-1]>>wordbits); //Setting carry to final output
         }
-        if(bsds[ds.size()-1] & 0xff00){ //If carry for most-significant bit is unzero add bit
+        if(bsds[ds.size()-1] & carryones){ //If carry for most-significant bit is unzero add bit
             expandSize(1);
             ds[ds.size()-1] = (bsds[ds.size()-2]>>wordbits); 
         }
@@ -221,7 +242,7 @@ class dynsiz{
         operator/(d);
         return *div_remp;
     }
-    void digitDiv(dynsiz b,dynsiz base){//Divide number by b and express it as number in given base
+    void digitDiv(dynsiz b,dynsiz base,int maxdigits=20){//Divide number by b and express it as number in given base
         ensureEqLen(&b);
         
         //Finding digits after period
@@ -229,7 +250,7 @@ class dynsiz{
         dynsiz q=operator/(b); //Actual integer division
         dynsiz r=*div_remp;
         dynsiz r1(1);
-        int maxdigits=20,mxdc=0; // Max digit counter (second)
+        int mxdc=0; // Max digit counter (second)
         while(!(r.eqzero()) && mxdc<maxdigits){//Generate until no digits left or maxdigit digits have been generated
             r*=base;
             r1=r/b; //Finding digit through quotient ...
@@ -278,6 +299,8 @@ class dynsiz{
                 return false;
         return true;
     }
+    //**write these file functions: get first n entries, get last n entries, append given entries
+    //Structure of (binary) logfiles: [size of entry][null-terminator][entry]{repeat for each entry}
 };
 void primeShortener(dynsiz* nom, dynsiz* denom){
     int primes[]={2,3,5,7,11,13,17,19,23,29};//((2 omitted as denominator is never even))
@@ -308,18 +331,19 @@ void nilakantha(){
     //Initially: p_nom=3, p_den=1, fac0=2
     //π = 3+∑_{n=0}^∞ (-1)^n*4/([2n+2][2n+3][2n+4])
     //N/D+a/b = Nb/Db+Da/Db = (Nb+Da)/Db
-    dynsiz p_nom(1),p_den(1),add_nom(1),add_den(1),fac0(1),fac1(1),fac2(1);
-    dynsiz one(1),two(1),four(1);
-    one.ds[0]=1; two.ds[0]=2; four.ds[0]=4;
-    p_nom.ds[0]=3;
-    p_den.ds[0]=1;
-    fac0.ds[0]=2;
+    dynsiz p_nom("0x3"),p_den("0x1"),fac0("0x2");
+    dynsiz add_nom(1),add_den(1),fac1(1),fac2(1);
+    dynsiz one("0x1"),two("0x2"),four("0x4");
+    //one.ds[0]=1; two.ds[0]=2; four.ds[0]=4;
+    //p_nom.ds[0]=3;
+    //p_den.ds[0]=1;
+    //fac0.ds[0]=2;
     
     fac1=fac0; fac1+=one;
     fac2=fac0; fac2+=two;
     
     dynsiz ten(1); ten.ds[0]=10;
-    for(int i=0;i<55;i++){// 3/1, 19/6, 47/15, 1321/420, 
+    for(int i=0;i<200;i++){// 3/1, 19/6, 47/15, 1321/420,
         add_den=fac0;
         add_den*=fac1;
         add_den*=fac2;
@@ -347,7 +371,7 @@ void nilakantha(){
     }
     p_nom.digitDiv(p_den,ten);
 }
-void pi_series(dynsiz f,std::ofstream* ologfile=nullptr){//Wallis product
+void wallis(dynsiz f,std::ofstream* ologfile=nullptr){//Wallis product
     //Initially: f=1, nom=2, den=1
     dynsiz p_nom(1),p_den(1),one(1);
     one.ds[0]=1;
@@ -391,18 +415,19 @@ inline void arghandler(int argc, char** argv){
     dynsiz p_nom(1),p_den(1),f(1);
     p_den.ds[0]=f.ds[0]=1;
     p_nom.ds[0]=2;
+    //**Add timer, maybe instead use: using namespace std::chrono; steady_clock::time_point clock_begin,clock_end; clock_begin = steady_clock::now();
+    //**Maybe add power series a^b = ∑_{n=0}^∞ (b choose n)*(x-1)^n, where (b choose n)=b*(b-1)(b-2)...(b-n+1)/n!
+    //**Exponential: ∑_{n=0}^∞ x^n/n!
     bool savelog=false;
-    for(int i=0;i<argc;i++)
-        printf("arg[%d]: %s\n",i,argv[i]);
+    //Walli's init
+    /*dynsiz p_nom(1),p_den(1),f(1);
+    p_den.ds[0]=f.ds[0]=1;
+    p_nom.ds[0]=2;*/
     
-    if(argc>1){
-        try{//Check
-            iter = std::stoi(argv[1],nullptr,10); // load amount of iterations (dec)
-            printf("iter+3=%d\n",iter+3);
-        } catch(const std::invalid_argument& ia){
-            printf("%s couldn't be passed as an integer",argv[1]);
-        }
-    }
+    /*for(int i=0;i<argc;i++)
+        printf("arg[%d]: %s\n",i,argv[i]);*/
+    
+    if(argc>1){}
     if(argc>2){
         ilogfile.open(argv[2]);//std::ios::app, std::ios::ate
         //file layout: nom(hex) den(hex) f(hex)\n
@@ -420,8 +445,7 @@ inline void arghandler(int argc, char** argv){
         
         std::cout<<(fa)<<" "<<(fb)<<std::endl;
     }
-    //pass stream to pi_series (or nullptr)
-    ilogfile.close();
+    //pass stream to series (or nullptr)
 }
 void div_time_test(){
     //Timing code taken from example
@@ -449,11 +473,11 @@ void div_time_test(){
 }
 int main(int argc, char** argv){
     //(a+bx+cx²+...)(d+ex+fx²+...)=a(d+ex+fx²)+bx(d+ex+fx²)+cx²(d+ex+fx²)=(ad+aex+afx²)+(bdx+bex²+bfx³)+(cdx²+cex³+cfx⁴)=ad+x(ae+bd)+x²(af+be+cd)+x³(bf+ce)+x⁴cf
-    //arghandler(argc,argv); return 0;
+    arghandler(argc,argv); dynsiz aa("0xeFA0"); aa.printHex(); return 0;
     //debugbool=false;
     dynsiz f(1);
     f.ds[0]=1;
-    nilakantha(); //pi_series(f);
+    nilakantha(); //wallis(f);
     return 0;
     dynsiz one(1),two(1);
     one.ds[0]=1; two.ds[0]=2;
