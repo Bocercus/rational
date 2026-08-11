@@ -1,5 +1,5 @@
 #include <stdio.h>
-#include <iostream>
+//#include <iostream>
 //#include <sstream>
 #include <string>
 #include <new>
@@ -8,7 +8,9 @@
 #include <fstream>
 //#include <stdexcept>
 #include <chrono>
+#include <map>
 #include <filesystem>
+#include <algorithm>
 
 typedef uint8_t word;
 typedef uint16_t dblword;
@@ -19,7 +21,16 @@ typedef uint16_t dblword;
 inline int iabs(int x) {return (x<0?-x:x);}
 inline int ramp(int x) {return (x>0?x:0);}
 
+class dynsiz;
+
 //bool debugbool;
+
+/*struct seriesConfig{
+    std::fstream* blabla;
+    uint8_t iter;
+    bool all;
+    dynsiz inputstuff;//arrayish
+}*/;
 
 class dynsiz{
     public:
@@ -301,6 +312,40 @@ class dynsiz{
     }
     //**write these file functions: get first n entries, get last n entries, append given entries
     //Structure of (binary) logfiles: [size of entry][null-terminator][entry]{repeat for each entry}
+    inline void append_entries2f(std::fstream* file, dynsiz* entries, int ent_arr_size){
+        //**Maybe remove as member, **ensure correct endian-ness
+        file->seekp(0,std::ios_base::end);
+        printf("File size before: %d\n",file->tellg());
+        uint16_t ent_size=0;//dynsiz ent_size(1),one("0x1");
+        for(int i=0;i<ent_arr_size;i++){
+            ent_size = entries[i].ds.size();
+            uint8_t siz_out_arr[]={static_cast<uint8_t>(ent_size),static_cast<uint8_t>(ent_size>>8)};
+            file->write(reinterpret_cast<char*>(siz_out_arr),2);
+            file->write(reinterpret_cast<char*>(entries[i].ds.data()),ent_size); //**8-bit
+            //For 16-bit use something like: file->write(reinterpret_cast<char*>({static_cast<uint8_t>(v),static_cast<uint8_t>(v>>8)}),2);
+        }
+        //**file->flush();?
+        file->seekp(0,std::ios_base::end);
+        printf("File size after: %d\n",file->tellg());
+    }
+    void extract_entriesOF(std::fstream* file, int entries){
+        file->seekg(0, std::ios_base::beg);
+        char* buf;
+        uint16_t siz;
+        for(int e=0;e<entries;e++){
+            buf=new char[2];
+            file->read(buf, 2);
+            siz=(buf[1]<<8)+buf[0];
+            printf("%d %d, size: %d, pos: %d\n",buf[0],buf[1],siz,file->tellg());
+            delete[] buf;
+            buf=new char[siz];
+            file->read(buf, siz);
+            dynsiz ds_buf(siz);
+            std::copy(buf, buf+siz, ds_buf.ds.data());
+            ds_buf.printHex();
+            delete[] buf;
+        }
+    }
 };
 void primeShortener(dynsiz* nom, dynsiz* denom){
     int primes[]={2,3,5,7,11,13,17,19,23,29};//((2 omitted as denominator is never even))
@@ -409,23 +454,140 @@ inline void parseHex2dynsiz(dynsiz* dsptr, std::string s){
     */
 }
 inline void arghandler(int argc, char** argv){
-    //argv[0]: path, argv[1]: iterations, argv[2]: file savepath
-    std::ifstream ilogfile; //Creating ifstream for loading log (ofstream will be created for same filepath)
-    int iter=10; //Default amount of iterations of the pi_series (may be overwritten by argv if given)
-    dynsiz p_nom(1),p_den(1),f(1);
-    p_den.ds[0]=f.ds[0]=1;
-    p_nom.ds[0]=2;
+    /* Flags:
+        -A: Algorithm
+            -A e: Euler's number
+            -A n: Nilakantha
+            -A w: Walli's
+        -a, --all: output all to screen (and file), otherwise only first and last
+        ((-d: display most recent value in file))
+        -h, --help: help
+        -i, --iterations: iterations of algorithm
+        -f, --filename: output file name
+    */
     //**Add timer, maybe instead use: using namespace std::chrono; steady_clock::time_point clock_begin,clock_end; clock_begin = steady_clock::now();
     //**Maybe add power series a^b = ∑_{n=0}^∞ (b choose n)*(x-1)^n, where (b choose n)=b*(b-1)(b-2)...(b-n+1)/n!
     //**Exponential: ∑_{n=0}^∞ x^n/n!
+    //**Maybe for -d set i=0 and let all algos print results after loop
+    std::fstream logfile; //Creating fstream for loading and saving log ((((ofstream will be created for same filepath))))
+    int iter=1; //Default amount of iterations of the series (may be overwritten by argv if given)
+    char algoChar=-1;
+    //enum {none=-1, euler, nilakantha, wallis} algo;
+    //algo=none;
     bool savelog=false;
+    bool outp_all=false;
+    std::string filename="";
+    enum eFlags {
+        flag_algo, flag_all, flag_help, flag_iter, flag_filename
+    };
+    std::map<std::string,eFlags> str2flag={
+        {"-A",flag_algo},
+        {"-a",flag_all},{"--all",flag_all},
+        {"-h",flag_help},{"--help",flag_help},
+        {"-i",flag_iter},{"--iterations",flag_iter},
+        {"-f",flag_filename},{"--filename",flag_filename}
+    };
+    const char* help_msg="Flags:\n\
+    -A: Algorithm\n\
+        -A e: Euler's number\n\
+        -A n: Nilakantha\n\
+        -A w: Walli's\n\
+    -a, --all: output all to screen (and file), otherwise only first and last\n\
+    ((-d: display most recent value in file))\n\
+    -h, --help: help\n\
+    -i, --iterations: iterations of algorithm\n\
+    -f, --filename: output file name";
+    
+    for(int i=1;i<argc;i++){//argv[0] is skipped
+        switch(str2flag[argv[i]]){
+            case flag_algo:
+                if(i+1<argc){ //If parameter has been specified
+                    algoChar=argv[i+1][0];
+                    i++; //Skip over read char
+                }
+            break;
+            case flag_all:
+                outp_all=true;
+            break;
+            case flag_help:
+                printf("%s\n",help_msg);
+            break;
+            case flag_iter:
+                if(i+1<argc){ //If parameter has been specified
+                    try{//Check if parameter is indeed a number
+                        iter = std::stoi(argv[i+1],nullptr,10); // load amount of iterations (dec)
+                    } catch(const std::invalid_argument& ia){
+                        printf("%s couldn't be passed as an integer",argv[i+1]);
+                    }
+                    i++; //Skip over read number
+                }else{
+                    printf("Please specify number after \"-i\"");
+                }
+                printf("iter+3=%d\n",iter+3);
+            break;
+            case flag_filename:
+                if(i+1<argc){ //If parameter has been specified
+                    filename=argv[i+1];
+                    i++; //Skip over read filename
+                }else{
+                    printf("Please specify filename after \"-f\"");
+                }
+            break;
+            default:
+                printf("Unknown flag: %s\n",argv[i]);
+        }
+    }
+    
+    bool log_alreadyx = false;
+    if(filename!=""){
+        std::filesystem::path logfilepath = filename;
+        log_alreadyx = std::filesystem::exists(logfilepath);
+        logfile.open(filename,std::fstream::in | std::fstream::out | std::fstream::binary | std::fstream::app);
+        if(!logfile.is_open()){
+            printf("Error loading file\n");
+            return;
+        }
+        if(log_alreadyx){
+            /*char* ftestbuf=new char[4];
+            logfile.read(ftestbuf,4);
+            for(int i=0;i<4;i++){
+                printf("%d ",ftestbuf[i]);
+            }
+            printf("\n");
+            delete[] ftestbuf;*/
+        } else {}
+        dynsiz ftestout[]={dynsiz(260), dynsiz("0x5ef")};
+        //ftestout[0].append_entries2f(&logfile, ftestout, 2);
+        ftestout[0].extract_entriesOF(&logfile, 2);
+        
+        //printf("fs_ex: %d\n",fs_ex);
+    }
+    
+    switch(algoChar){
+        case 'e':
+            //algo=euler;
+            printf("Euler's\n");
+        break;
+        case 'n':
+            //algo=nilakantha;
+            printf("Nilakantha's\n");
+        break;
+        case 'w':
+            //algo=wallis;
+            printf("Walli's\n");
+        break;
+        default:
+            printf("Unknown algorithm: %c\n",algoChar);
+    }
+    logfile.close();
+    
     //Walli's init
     /*dynsiz p_nom(1),p_den(1),f(1);
     p_den.ds[0]=f.ds[0]=1;
     p_nom.ds[0]=2;*/
     
     /*for(int i=0;i<argc;i++)
-        printf("arg[%d]: %s\n",i,argv[i]);*/
+        printf("arg[%d]: %s\n",i,argv[i]);
     
     if(argc>1){}
     if(argc>2){
@@ -446,6 +608,7 @@ inline void arghandler(int argc, char** argv){
         std::cout<<(fa)<<" "<<(fb)<<std::endl;
     }
     //pass stream to series (or nullptr)
+    i*/
 }
 void div_time_test(){
     //Timing code taken from example
