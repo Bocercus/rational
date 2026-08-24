@@ -1,22 +1,4 @@
-#include <stdio.h>
-//#include <iostream>
-//#include <sstream>
-#include <string>
-#include <new>
-#include <vector>
-#include <stdint.h>
-#include <fstream>
-//#include <stdexcept>
-#include <chrono>
-#include <map>
-#include <filesystem>
-#include <algorithm>
-
-typedef uint8_t word;
-typedef uint16_t dblword;
-#define wordones 0xff
-#define wordbits 8
-#define carryones 0xff00
+#include "pi0.h"
 
 inline int iabs(int x) {return (x<0?-x:x);}
 inline int ramp(int x) {return (x>0?x:0);}
@@ -30,323 +12,316 @@ class dynsiz;
     uint8_t iter;
     bool all;
     dynsiz inputstuff;//arrayish
-}*/;
+};*/
 
-class dynsiz{
-    public:
-    std::vector<word> ds; //Number array ( ds[0] least significant figure )
-    dynsiz* div_remp; //Pointer to remainder of integer division
-    dynsiz(int n){//Init n words filled with zeros
-        ds.assign(n,0);
-        div_remp=nullptr;
-    }
-    dynsiz(std::string numstr){
-        div_remp=nullptr;
-        if(numstr.substr(0,2)!="0x" || numstr.length()<3){
-            printf("Please use hexadecimal and start string with \"0x\"\n");
-            ds.assign(1,0); //**Maybe throw exception instead
-            return;
-        }
-        if(numstr.length()%2==1){
-            //printf("Uneven length. Turning");
-            numstr="0"+numstr.substr(2,numstr.length()-2);//Add initial padding zero for uneven strings and remove 0x
-        }else{
-            numstr=numstr.substr(2,numstr.length()-2);//Remove 0x
-        }
-        int L=numstr.length()/2;
-        ds.assign(L,0);
-        for(int i=0;i<L;i++){
-            ds[L-i-1]=std::stoi(numstr.substr(2*i,2),nullptr,16);
-        }
-    }
-    ~dynsiz(){
-        delete div_remp;
-    }
-    /* AI-written start */
-    dynsiz(const dynsiz& x){
-        //printf("Copy constructor\n");
-        ds=x.ds;
-        if(x.div_remp)
-            div_remp = new dynsiz(*x.div_remp);
-        else
-            div_remp = nullptr;
-    }
-     // Copy assignment (strong exception safety)
-    dynsiz& operator=(const dynsiz& x){
-        //printf("Copy assignment\n");
-        if (this == &x) return *this;
-        ds = x.ds;
-        delete div_remp;
-        div_remp = x.div_remp ? new dynsiz(*x.div_remp) : nullptr;
-        return *this;
-    }
-    // Move constructor
-    dynsiz(dynsiz&& other) noexcept : ds(std::move(other.ds)), div_remp(other.div_remp) {
-        //printf("Move constructor\n");
-        other.div_remp = nullptr;
-    }
-    // Move assignment
-    dynsiz& operator=(dynsiz&& other) noexcept {
-        //printf("Move assignment\n");
-        if (this != &other) {
-            ds = std::move(other.ds);
-            delete div_remp;
-            div_remp = other.div_remp;
-            other.div_remp = nullptr;
-        }
-        return *this;
-    }
-    /* AI-written end */
-    bool expandSize(int n){
-        for(int i=0;i<n;i++)
-            ds.push_back(0);
-        return true;
-    }
-    void printNums(){
-        for(int i=0;i<ds.size();i++)
-            printf("%d ",ds[i]); //%x
-        printf("\n");
-    }
-    void printHex(){
-        printf("0x");
-        for(int i=0;i<ds.size();i++){
-            if(ds[ds.size()-i-1]<16)
-                printf("0");
-            printf("%x",ds[ds.size()-i-1]);
-        }
-        printf("\n");
-    }
-    void ensureEqLen(dynsiz* bptr){//Ensure pointed synsize have equal size as this object
-        if(bptr->ds.size()>ds.size()) expandSize(bptr->ds.size()-ds.size()); //while(b.siz>siz) expandSize(1);
-        if(bptr->ds.size()<ds.size()) bptr->expandSize(ds.size()-bptr->ds.size()); //while(b.siz<siz) b.expandSize(1);
-        //Appearently returning a bool from this functions breaks something (when void->bool ofc)
-    }
-    void operator<<=(word bs){//bs: amount of bits to be shifted
-        if(bs>wordbits){//We shall not shift more than an extra word 
-            printf("Bitshift too large (%d)\n",bs);
-            return;
-        }
-        std::vector<dblword> bsds;
-        int i;
-        for(i=0;i<ds.size();i++){
-            bsds.push_back(ds[i]); //static_cast<dblword>(ds[i]);
-            bsds[i]<<=bs; //Actual shift
-            ds[i] = 0;
-        }
-        for(i=0;i<ds.size();i++){
-            ds[i] |= bsds[i] & wordones; //Setting shifted least-significant-word
-            if(i>0)
-                ds[i] |= (bsds[i-1]>>wordbits); //Setting carry to final output
-        }
-        if(bsds[ds.size()-1] & carryones){ //If carry for most-significant bit is unzero add bit
-            expandSize(1);
-            ds[ds.size()-1] = (bsds[ds.size()-2]>>wordbits); 
-        }
-    }
-    private:
-    inline void pm(dynsiz b,bool plus){
-        ensureEqLen(&b);
-        word sum;
-        word c=0;
-        for(int i=0;i<ds.size();i++){
-            if(plus){
-                sum=ds[i]+b.ds[i]+c;
-                if(sum+c<ds[i]) c=1; else c=0; //Set carry if overflow
-            }else{
-                sum=ds[i]-b.ds[i]-c; //Difference (sum, if b is negative)
-                if(sum+c>ds[i]) c=1; else c=0; //Set carry if overflow
-            }
-            //printf("sum: %d, c: %d\n",sum,c);
-            ds[i]=sum;
-        }
-        if(c==1){
-            expandSize(1);
-            ds[ds.size()-1]=1;
-        }
-    }
-    public:
-    void operator+=(dynsiz& b){ pm(b,true); }
-    void operator-=(dynsiz& b){ pm(b,false); }
-    void operator*=(dynsiz& b){
-        //printNums();printf("* ");b.printNums();
-        //printHex();printf("* ");b.printHex();
-        ensureEqLen(&b);
-        dynsiz prod(ds.size());
-        
-        int n,m;
-        //Double loop like moving diagonally in a matrix to group products
-        for(m=0;m<2*ds.size()-1;m++){ //m: index of diagonal
-            int ns = ds.size()-iabs(ds.size()-m-1); //ns: count of elements in diagonal
-            int ins = ramp(m-ds.size()+1); //index of first element in diagonal (only nonzero for m>=size)
-            for(n=0;n<ns;n++){
-                //Fx: 0,0  1,0-0,1  2,0-1,1-0,2
-                dblword p = ds[ins+n] * b.ds[m-n-ins];
-                word p0 = p & wordones;
-                word carry = p>>wordbits;//(p-p0) / wordsize;//wordsize==256
-                
-                /*if(debugbool){
-                    printf("m: %d ns: %d ins+n %d m-n-ins: %d\n",m,ns,ins+n,m-n-ins);
-                    printf("%d * %d = %d, carry=%d\n",ds[n],b.ds[ns-n-1],p0,carry);
-                }*/
+dynsiz::dynsiz(int n){//Init n words filled with zeros
+	ds.assign(n,0);
+	div_remp=nullptr;
+}
+dynsiz::dynsiz(std::string numstr){
+	div_remp=nullptr;
+	if(numstr.substr(0,2)!="0x" || numstr.length()<3){
+		printf("Please use hexadecimal and start string with \"0x\"\n");
+		ds.assign(1,0); //**Maybe throw exception instead
+		return;
+	}
+	if(numstr.length()%2==1){
+		//printf("Uneven length. Turning");
+		numstr="0"+numstr.substr(2,numstr.length()-2);//Add initial padding zero for uneven strings and remove 0x
+	}else{
+		numstr=numstr.substr(2,numstr.length()-2);//Remove 0x
+	}
+	int L=numstr.length()/2;
+	ds.assign(L,0);
+	for(int i=0;i<L;i++){
+		ds[L-i-1]=std::stoi(numstr.substr(2*i,2),nullptr,16);
+	}
+}
+dynsiz::~dynsiz(){
+	delete div_remp;
+}
+/* AI-written start */
+dynsiz::dynsiz(const dynsiz& x){
+	//printf("Copy constructor\n");
+	ds=x.ds;
+	if(x.div_remp)
+		div_remp = new dynsiz(*x.div_remp);
+	else
+		div_remp = nullptr;
+}
+ // Copy assignment (strong exception safety)
+dynsiz& dynsiz::operator=(const dynsiz& x){
+	//printf("Copy assignment\n");
+	if (this == &x) return *this;
+	ds = x.ds;
+	delete div_remp;
+	div_remp = x.div_remp ? new dynsiz(*x.div_remp) : nullptr;
+	return *this;
+}
+// Move constructor
+dynsiz::dynsiz(dynsiz&& other) noexcept : ds(std::move(other.ds)), div_remp(other.div_remp) {
+	//printf("Move constructor\n");
+	other.div_remp = nullptr;
+}
+// Move assignment
+dynsiz& dynsiz::operator=(dynsiz&& other) noexcept {
+	//printf("Move assignment\n");
+	if (this != &other) {
+		ds = std::move(other.ds);
+		delete div_remp;
+		div_remp = other.div_remp;
+		other.div_remp = nullptr;
+	}
+	return *this;
+}
+/* AI-written end */
+bool dynsiz::expandSize(int n){
+	for(int i=0;i<n;i++)
+		ds.push_back(0);
+	return true;
+}
+void dynsiz::printNums(){
+	for(int i=0;i<ds.size();i++)
+		printf("%d ",ds[i]); //%x
+	printf("\n");
+}
+void dynsiz::printHex(){
+	printf("0x");
+	for(int i=0;i<ds.size();i++){
+		if(ds[ds.size()-i-1]<16)
+			printf("0");
+		printf("%x",ds[ds.size()-i-1]);
+	}
+	printf("\n");
+}
+void dynsiz::ensureEqLen(dynsiz* bptr){//Ensure pointed synsize have equal size as this object
+	if(bptr->ds.size()>ds.size()) expandSize(bptr->ds.size()-ds.size()); //while(b.siz>siz) expandSize(1);
+	if(bptr->ds.size()<ds.size()) bptr->expandSize(ds.size()-bptr->ds.size()); //while(b.siz<siz) b.expandSize(1);
+	//Appearently returning a bool from this functions breaks something (when void->bool ofc)
+}
+void dynsiz::operator<<=(word bs){//bs: amount of bits to be shifted
+	if(bs>wordbits){//We shall not shift more than an extra word
+		printf("Bitshift too large (%d)\n",bs);
+		return;
+	}
+	std::vector<dblword> bsds;
+	int i;
+	for(i=0;i<ds.size();i++){
+		bsds.push_back(ds[i]); //static_cast<dblword>(ds[i]);
+		bsds[i]<<=bs; //Actual shift
+		ds[i] = 0;
+	}
+	for(i=0;i<ds.size();i++){
+		ds[i] |= bsds[i] & wordones; //Setting shifted least-significant-word
+		if(i>0)
+			ds[i] |= (bsds[i-1]>>wordbits); //Setting carry to final output
+	}
+	if(bsds[ds.size()-1] & carryones){ //If carry for most-significant bit is unzero add bit
+		expandSize(1);
+		ds[ds.size()-1] = (bsds[ds.size()-2]>>wordbits);
+	}
+}
+inline void dynsiz::pm(dynsiz b,bool plus){//private
+	ensureEqLen(&b);
+	word sum;
+	word c=0;
+	for(int i=0;i<ds.size();i++){
+		if(plus){
+			sum=ds[i]+b.ds[i]+c;
+			if(sum+c<ds[i]) c=1; else c=0; //Set carry if overflow
+		}else{
+			sum=ds[i]-b.ds[i]-c; //Difference (sum, if b is negative)
+			if(sum+c>ds[i]) c=1; else c=0; //Set carry if overflow
+		}
+		//printf("sum: %d, c: %d\n",sum,c);
+		ds[i]=sum;
+	}
+	if(c==1){
+		expandSize(1);
+		ds[ds.size()-1]=1;
+	}
+}
+void dynsiz::operator+=(dynsiz& b){ pm(b,true); }
+void dynsiz::operator-=(dynsiz& b){ pm(b,false); }
+void dynsiz::operator*=(dynsiz& b){
+	//printNums();printf("* ");b.printNums();
+	//printHex();printf("* ");b.printHex();
+	ensureEqLen(&b);
+	dynsiz prod(ds.size());
+	
+	int n,m;
+	//Double loop like moving diagonally in a matrix to group products
+	for(m=0;m<2*ds.size()-1;m++){ //m: index of diagonal
+		int ns = ds.size()-iabs(ds.size()-m-1); //ns: count of elements in diagonal
+		int ins = ramp(m-ds.size()+1); //index of first element in diagonal (only nonzero for m>=size)
+		for(n=0;n<ns;n++){
+			//Fx: 0,0  1,0-0,1  2,0-1,1-0,2
+			dblword p = ds[ins+n] * b.ds[m-n-ins];
+			word p0 = p & wordones;
+			word carry = p>>wordbits;//(p-p0) / wordsize;//wordsize==256
+			
+			/*if(debugbool){
+				printf("m: %d ns: %d ins+n %d m-n-ins: %d\n",m,ns,ins+n,m-n-ins);
+				printf("%d * %d = %d, carry=%d\n",ds[n],b.ds[ns-n-1],p0,carry);
+			}*/
 
-                dynsiz addend(m+(carry>0?1:0)+1);
-                addend.ds[m] = p0;
-                if(carry>0) addend.ds[m+1] = carry;
-                if(p0 != 0 || carry != 0)
-                    prod+=addend;
-            }
-        }
-        ds.assign(prod.ds.begin(),prod.ds.end());
-        //printf("= "); prod.printHex();
-    }
-    dynsiz operator/(dynsiz d){//integer divison
-        //**Ensure d is nonzero
-        dynsiz Q(1);//,R(1);
-        if(d.eqzero()){//Dividing by zero
-            printf("Divided by zero");
-            return *this;
-        }
-        div_remp=new dynsiz(1);
-        Q.ds[0]=0; //R.ds[0]=0;
-        int j;
-        for(int i=ds.size()-1;i>=0;i--){
-            //printf("i: %d, ds[i]: %d\n",i,ds[i]);
-            for(j=wordbits-1;j>=0;j--){ //for(j=0;j<wordbits;j++){
-                //printf("j: %d, bit: %d %d\nR:",j,ds[i] & (1<<j),(ds[i] & (1<<j))>0);
-                (*div_remp)<<=1;
-                (*div_remp).ds[0] |= (ds[i] & (1<<j))>0; //Assign jth bit of ds to least sig. bit of remainder
-                if(!((*div_remp)<d)){
-                    (*div_remp)-=d;
-                    Q.ds[0]|=1; //printf("1");
-                }//else printf("0");
-                //printf("\n");
-                if(i>0 || j>0)
-                    Q<<=1;
-            }
-        }
-        /*printf("Q: ");
-        Q.printHex();
-        printf("R: ");
-        div_remp->printHex();*/
-        return Q;
-    }
-    dynsiz legacy_divide(dynsiz d){//integer divison
-        //**Ensure d is nonzero
-        ensureEqLen(&d);
-        dynsiz one(1);
-        one.ds[0]=1;
-        if(d.eqzero()){//Dividing by zero
-            printf("Divided by zero");
-            return *this;
-        }
-        div_remp=new dynsiz(ds.size());
-        div_remp->ds.assign(ds.begin(),ds.end());
-        dynsiz q(1);
-        while(!(*div_remp<d)){
-            *div_remp-=d;
-            q+=one;
-        }
-        //div_remp->printHex();
-        return q;
-    }
-    dynsiz operator%(dynsiz d){
-        operator/(d);
-        return *div_remp;
-    }
-    void digitDiv(dynsiz b,dynsiz base,int maxdigits=20){//Divide number by b and express it as number in given base
-        ensureEqLen(&b);
-        
-        //Finding digits after period
-        std::vector<word> fdigits;
-        dynsiz q=operator/(b); //Actual integer division
-        dynsiz r=*div_remp;
-        dynsiz r1(1);
-        int mxdc=0; // Max digit counter (second)
-        while(!(r.eqzero()) && mxdc<maxdigits){//Generate until no digits left or maxdigit digits have been generated
-            r*=base;
-            r1=r/b; //Finding digit through quotient ...
-            fdigits.push_back(r1.ds[0]);
-            r=*(r.div_remp); //... and using the remainder to find the later digits
-            mxdc++;
-        }
-        
-        //Finding digits before period
-        std::vector<word> digits;
-        dynsiz q1(1);
-        do{//do-while loop if this is =0
-            q1=q/base; //Save quotient for later (greater digits)
-            digits.push_back( q.div_remp->ds[0] ); //Save remainder as digit
-            q=q1;
-        } while(!(q.eqzero()));//If q positive
-        
-        printf("digits: ");
-        int i;
-        for(i=digits.size()-1;i>=0;i--)
-            printf("%d",digits[i]);
-        if(fdigits.size()>0)
-            printf(".");
-        for(i=0;i<fdigits.size();i++)
-            printf("%d",fdigits[i]);
-        printf("\n");
-    }
-    bool operator<(dynsiz b){
-        ensureEqLen(&b);
-        for(int i=ds.size()-1;i>=0;i--){
-            if(ds[i]==b.ds[i])
-                continue;
-            else if(ds[i]<b.ds[i])
-                return true;
-            else
-                return false;
-        }
-        return false; //Equality
-    }
-    bool operator>(dynsiz b){
-        return b<*this;
-    }
-    bool eqzero(){
-        for(int i=0;i<ds.size();i++)
-            if(ds[i]!=0)
-                return false;
-        return true;
-    }
-    //**write these file functions: get first n entries, get last n entries, append given entries
-    //Structure of (binary) logfiles: [size of entry][null-terminator][entry]{repeat for each entry}
-    inline void append_entries2f(std::fstream* file, dynsiz* entries, int ent_arr_size){
-        //**Maybe remove as member, **ensure correct endian-ness
-        file->seekp(0,std::ios_base::end);
-        printf("File size before: %d\n",file->tellg());
-        uint16_t ent_size=0;//dynsiz ent_size(1),one("0x1");
-        for(int i=0;i<ent_arr_size;i++){
-            ent_size = entries[i].ds.size();
-            uint8_t siz_out_arr[]={static_cast<uint8_t>(ent_size),static_cast<uint8_t>(ent_size>>8)};
-            file->write(reinterpret_cast<char*>(siz_out_arr),2);
-            file->write(reinterpret_cast<char*>(entries[i].ds.data()),ent_size); //**8-bit
-            //For 16-bit use something like: file->write(reinterpret_cast<char*>({static_cast<uint8_t>(v),static_cast<uint8_t>(v>>8)}),2);
-        }
-        //**file->flush();?
-        file->seekp(0,std::ios_base::end);
-        printf("File size after: %d\n",file->tellg());
-    }
-    void extract_entriesOF(std::fstream* file, int entries){
-        file->seekg(0, std::ios_base::beg);
-        char* buf;
-        uint16_t siz;
-        for(int e=0;e<entries;e++){
-            buf=new char[2];
-            file->read(buf, 2);
-            siz=(buf[1]<<8)+buf[0];
-            printf("%d %d, size: %d, pos: %d\n",buf[0],buf[1],siz,file->tellg());
-            delete[] buf;
-            buf=new char[siz];
-            file->read(buf, siz);
-            dynsiz ds_buf(siz);
-            std::copy(buf, buf+siz, ds_buf.ds.data());
-            ds_buf.printHex();
-            delete[] buf;
-        }
-    }
-};
+			dynsiz addend(m+(carry>0?1:0)+1);
+			addend.ds[m] = p0;
+			if(carry>0) addend.ds[m+1] = carry;
+			if(p0 != 0 || carry != 0)
+				prod+=addend;
+		}
+	}
+	ds.assign(prod.ds.begin(),prod.ds.end());
+	//printf("= "); prod.printHex();
+}
+dynsiz dynsiz::operator/(dynsiz d){//integer divison
+	//**Ensure d is nonzero
+	dynsiz Q(1);//,R(1);
+	if(d.eqzero()){//Dividing by zero
+		printf("Divided by zero");
+		return *this;
+	}
+	div_remp=new dynsiz(1);
+	Q.ds[0]=0; //R.ds[0]=0;
+	int j;
+	for(int i=ds.size()-1;i>=0;i--){
+		//printf("i: %d, ds[i]: %d\n",i,ds[i]);
+		for(j=wordbits-1;j>=0;j--){ //for(j=0;j<wordbits;j++){
+			//printf("j: %d, bit: %d %d\nR:",j,ds[i] & (1<<j),(ds[i] & (1<<j))>0);
+			(*div_remp)<<=1;
+			(*div_remp).ds[0] |= (ds[i] & (1<<j))>0; //Assign jth bit of ds to least sig. bit of remainder
+			if(!((*div_remp)<d)){
+				(*div_remp)-=d;
+				Q.ds[0]|=1; //printf("1");
+			}//else printf("0");
+			//printf("\n");
+			if(i>0 || j>0)
+				Q<<=1;
+		}
+	}
+	/*printf("Q: ");
+	Q.printHex();
+	printf("R: ");
+	div_remp->printHex();*/
+	return Q;
+}
+dynsiz dynsiz::legacy_divide(dynsiz d){//integer divison
+	//**Ensure d is nonzero
+	ensureEqLen(&d);
+	dynsiz one(1);
+	one.ds[0]=1;
+	if(d.eqzero()){//Dividing by zero
+		printf("Divided by zero");
+		return *this;
+	}
+	div_remp=new dynsiz(ds.size());
+	div_remp->ds.assign(ds.begin(),ds.end());
+	dynsiz q(1);
+	while(!(*div_remp<d)){
+		*div_remp-=d;
+		q+=one;
+	}
+	//div_remp->printHex();
+	return q;
+}
+dynsiz dynsiz::operator%(dynsiz d){
+	operator/(d);
+	return *div_remp;
+}
+void dynsiz::digitDiv(dynsiz b,dynsiz base,int maxdigits=20){//Divide number by b and express it as number in given base
+	ensureEqLen(&b);
+	
+	//Finding digits after period
+	std::vector<word> fdigits;
+	dynsiz q=operator/(b); //Actual integer division
+	dynsiz r=*div_remp;
+	dynsiz r1(1);
+	int mxdc=0; // Max digit counter (second)
+	while(!(r.eqzero()) && mxdc<maxdigits){//Generate until no digits left or maxdigit digits have been generated
+		r*=base;
+		r1=r/b; //Finding digit through quotient ...
+		fdigits.push_back(r1.ds[0]);
+		r=*(r.div_remp); //... and using the remainder to find the later digits
+		mxdc++;
+	}
+	
+	//Finding digits before period
+	std::vector<word> digits;
+	dynsiz q1(1);
+	do{//do-while loop if this is =0
+		q1=q/base; //Save quotient for later (greater digits)
+		digits.push_back( q.div_remp->ds[0] ); //Save remainder as digit
+		q=q1;
+	} while(!(q.eqzero()));//If q positive
+	
+	printf("digits: ");
+	int i;
+	for(i=digits.size()-1;i>=0;i--)
+		printf("%d",digits[i]);
+	if(fdigits.size()>0)
+		printf(".");
+	for(i=0;i<fdigits.size();i++)
+		printf("%d",fdigits[i]);
+	printf("\n");
+}
+bool dynsiz::operator<(dynsiz b){
+	ensureEqLen(&b);
+	for(int i=ds.size()-1;i>=0;i--){
+		if(ds[i]==b.ds[i])
+			continue;
+		else if(ds[i]<b.ds[i])
+			return true;
+		else
+			return false;
+	}
+	return false; //Equality
+}
+bool dynsiz::operator>(dynsiz b){
+	return b<*this;
+}
+bool dynsiz::eqzero(){
+	for(int i=0;i<ds.size();i++)
+		if(ds[i]!=0)
+			return false;
+	return true;
+}
+//**write these file functions: get first n entries, get last n entries, append given entries
+//Structure of (binary) logfiles: [size of entry][null-terminator][entry]{repeat for each entry}
+inline void append_entries2f(std::fstream* file, dynsiz* entries, int ent_arr_size){
+	//**ensure correct endian-ness
+	file->seekp(0,std::ios_base::end);
+	printf("File size before: %d\n",file->tellg());
+	uint16_t ent_size=0;//dynsiz ent_size(1),one("0x1");
+	for(int i=0;i<ent_arr_size;i++){
+		ent_size = entries[i].ds.size();
+		uint8_t siz_out_arr[]={static_cast<uint8_t>(ent_size),static_cast<uint8_t>(ent_size>>8)};
+		file->write(reinterpret_cast<char*>(siz_out_arr),2);
+		file->write(reinterpret_cast<char*>(entries[i].ds.data()),ent_size); //**8-bit
+		//For 16-bit use something like: file->write(reinterpret_cast<char*>({static_cast<uint8_t>(v),static_cast<uint8_t>(v>>8)}),2);
+	}
+	//**file->flush();?
+	file->seekp(0,std::ios_base::end);
+	printf("File size after: %d\n",file->tellg());
+}
+void extract_entriesOF(std::fstream* file, int entries){
+	file->seekg(0, std::ios_base::beg);
+	char* buf;
+	uint16_t siz;
+	for(int e=0;e<entries;e++){
+		buf=new char[2];
+		file->read(buf, 2);
+		siz=(buf[1]<<8)+buf[0];
+		printf("%d %d, size: %d, pos: %d\n",buf[0],buf[1],siz,file->tellg());
+		delete[] buf;
+		buf=new char[siz];
+		file->read(buf, siz);
+		dynsiz ds_buf(siz);
+		std::copy(buf, buf+siz, ds_buf.ds.data());
+		ds_buf.printHex();
+		delete[] buf;
+	}
+}
 void primeShortener(dynsiz* nom, dynsiz* denom){
     int primes[]={2,3,5,7,11,13,17,19,23,29};//((2 omitted as denominator is never even))
     dynsiz pr(1),nomdiv(1),dendiv(1),nommod(1),denmod(1);
@@ -557,8 +532,8 @@ inline void arghandler(int argc, char** argv){
             delete[] ftestbuf;*/
         } else {}
         dynsiz ftestout[]={dynsiz(260), dynsiz("0x5ef")};
-        //ftestout[0].append_entries2f(&logfile, ftestout, 2);
-        ftestout[0].extract_entriesOF(&logfile, 2);
+        //append_entries2f(&logfile, ftestout, 2);
+        extract_entriesOF(&logfile, 2);
         
         //printf("fs_ex: %d\n",fs_ex);
     }
