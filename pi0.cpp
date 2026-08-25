@@ -288,39 +288,95 @@ bool dynsiz::eqzero(){
 }
 //**write these file functions: get first n entries, get last n entries, append given entries
 //Structure of (binary) logfiles: [size of entry][null-terminator][entry]{repeat for each entry}
+std::vector<uint8_t> uint32_to_utf8(uint32_t num){
+	std::vector<uint8_t> out_arr;
+	printf("num: %d\n",num);
+	if(num>=(1<<21)){//UTF-8 stores max 21 bits (afaik)
+		printf("Number too large! %d\n",num);
+	} else if(num>=(1<<16)){//Max 21-bits -> 4 UTF-8 bytes: 11110uvv 10vvwwww 10xxxxyy 10yyzzzz
+		out_arr={0xF0,0x80,0x80,0x80};
+		out_arr[3] |= static_cast<uint8_t>(num) & 0x3F; //LSB
+		out_arr[2] |= static_cast<uint8_t>(num>>6) & 0x3F;
+		out_arr[1] |= static_cast<uint8_t>(num>>12) & 0x3F;
+		out_arr[0] |= static_cast<uint8_t>(num>>18); //MSB
+	} else if(num>=(1<<11)){//Max 16-bits -> 3 UTF-8 bytes: 1110wwww 10xxxxyy 10yyzzzz
+		out_arr={0xE0,0x80,0x80};
+		out_arr[2] |= static_cast<uint8_t>(num) & 0x3F;
+		out_arr[1] |= static_cast<uint8_t>(num>>6) & 0x3F;
+		out_arr[0] |= static_cast<uint8_t>(num>>12);
+	} else if(num>=(1<<7)){//Max 11-bits -> 2 UTF-8 bytes: 110xxxyy 10yyzzzz
+		out_arr={0xC0,0x80};
+		out_arr[1] |= static_cast<uint8_t>(num) & 0x3F;
+		out_arr[0] |= static_cast<uint8_t>(num>>6);
+	} else {//Max 7-bits -> 1 UTF-8 byte: 0yyyzzzz
+		out_arr={static_cast<uint8_t>(num)};
+	}
+	return out_arr;
+}
+
 inline void append_entries2f(std::fstream* file, dynsiz* entries, int ent_arr_size){
 	//**ensure correct endian-ness
 	file->seekp(0,std::ios_base::end);
 	printf("File size before: %d\n",file->tellg());
-	uint16_t ent_size=0;//dynsiz ent_size(1),one("0x1");
+	uint32_t ent_size=0;//dynsiz ent_size(1),one("0x1");
+	std::vector<uint8_t> siz_out_arr;
 	for(int i=0;i<ent_arr_size;i++){
 		ent_size = entries[i].ds.size();
-		uint8_t siz_out_arr[]={static_cast<uint8_t>(ent_size),static_cast<uint8_t>(ent_size>>8)};
-		file->write(reinterpret_cast<char*>(siz_out_arr),2);
+		siz_out_arr=uint32_to_utf8(ent_size);//uint8_t siz_out_arr[]={static_cast<uint8_t>(ent_size),static_cast<uint8_t>(ent_size>>8)};
+		file->write(reinterpret_cast<char*>(siz_out_arr.data()),siz_out_arr.size());
 		file->write(reinterpret_cast<char*>(entries[i].ds.data()),ent_size); //**8-bit
 		//For 16-bit use something like: file->write(reinterpret_cast<char*>({static_cast<uint8_t>(v),static_cast<uint8_t>(v>>8)}),2);
 	}
-	//**file->flush();?
 	file->seekp(0,std::ios_base::end);
 	printf("File size after: %d\n",file->tellg());
+	file->flush();//**test this
 }
-void extract_entriesOF(std::fstream* file, int entries){
+std::vector<dynsiz> extract_entriesOF(std::fstream* file, int entries){
 	file->seekg(0, std::ios_base::beg);
 	char* buf;
-	uint16_t siz;
+	uint32_t siz;
+	uint8_t extra_bytes;
+	std::vector<dynsiz> ext_arr;
 	for(int e=0;e<entries;e++){
-		buf=new char[2];
-		file->read(buf, 2);
-		siz=(buf[1]<<8)+buf[0];
-		printf("%d %d, size: %d, pos: %d\n",buf[0],buf[1],siz,file->tellg());
+		//Get size byte(s) from UTF-8 format
+		buf=new char[1];
+		file->read(buf, 1);
+		extra_bytes=0;
+		//printf("First byte: %x %x %x %x\n",buf[0],buf[0] & 0xE0,buf[0] & 0xF0,buf[0] & 0xF8);
+		if((buf[0] & 0x80)==0){//1 UTF-8 byte: 0xxxxxxx
+			siz=buf[0];
+		} else if((buf[0] & 0xE0)==0xC0){//2 UTF-8 bytes: 110xxxxx ...
+			siz=buf[0] & 0x1F;
+			//printf("buf[0] & 0x1F: %d\n",buf[0] & 0x1F);
+			extra_bytes=1;
+		} else if((buf[0] & 0xF0)==0xE0){//3 UTF-8 bytes: 1110xxxx ...
+			siz=buf[0] & 0xF;
+			extra_bytes=2;
+		} else if((buf[0] & 0xF8)==0xF0){//4 UTF-8 bytes: 11110xxx ...
+			siz=buf[0] & 0x7;
+			extra_bytes=2;
+		} else {
+			printf("Byte doesn't seem to be UTF-8: &x\n",buf[0]);
+		}
+		for(uint8_t i=0;i<extra_bytes;i++){
+			file->read(buf, 1);
+			if(buf[0] & 0xC0 != 0x80){
+				printf("Following byte not equal 0b10xxxxxx: %x\n",buf[0]);
+			}
+			siz<<=6;
+			siz |= buf[0] & 0x3F;
+		}
+		printf("size: %d, pos: %d\n",siz,file->tellg());
 		delete[] buf;
 		buf=new char[siz];
 		file->read(buf, siz);
 		dynsiz ds_buf(siz);
 		std::copy(buf, buf+siz, ds_buf.ds.data());
-		ds_buf.printHex();
+		ext_arr.push_back( ds_buf );
+		//ds_buf.printHex();
 		delete[] buf;
 	}
+	return ext_arr;
 }
 void primeShortener(dynsiz* nom, dynsiz* denom){
     int primes[]={2,3,5,7,11,13,17,19,23,29};//((2 omitted as denominator is never even))
@@ -531,9 +587,13 @@ inline void arghandler(int argc, char** argv){
             printf("\n");
             delete[] ftestbuf;*/
         } else {}
-        dynsiz ftestout[]={dynsiz(260), dynsiz("0x5ef")};
-        //append_entries2f(&logfile, ftestout, 2);
-        extract_entriesOF(&logfile, 2);
+        //dynsiz ftestout[]={dynsiz(4096)};
+		//ftestout[0].ds[384]=5; ftestout[0].ds[3]=34;
+		//append_entries2f(&logfile, ftestout, 1);
+
+		dynsiz ftestout[]={dynsiz(260), dynsiz("0x5ef")};
+        append_entries2f(&logfile, ftestout, 2);
+        extract_entriesOF(&logfile, 1);
         
         //printf("fs_ex: %d\n",fs_ex);
     }
@@ -611,6 +671,13 @@ void div_time_test(){
 }
 int main(int argc, char** argv){
     //(a+bx+cx²+...)(d+ex+fx²+...)=a(d+ex+fx²)+bx(d+ex+fx²)+cx²(d+ex+fx²)=(ad+aex+afx²)+(bdx+bex²+bfx³)+(cdx²+cex³+cfx⁴)=ad+x(ae+bd)+x²(af+be+cd)+x³(bf+ce)+x⁴cf
+	/*uint32_t ab=0b11111111111;
+	std::vector<uint8_t> out;
+	out=uint32_to_utf8(ab);
+	for(int i=0;i<out.size();i++){
+		printf("%x\n",out[i]);
+	}
+	return 0;*/
     arghandler(argc,argv); dynsiz aa("0xeFA0"); aa.printHex(); return 0;
     //debugbool=false;
     dynsiz f(1);

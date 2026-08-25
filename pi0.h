@@ -55,4 +55,4 @@ class dynsiz{
     bool eqzero();
 };
 inline void append_entries2f(std::fstream* file, dynsiz* entries, int ent_arr_size);
-void extract_entriesOF(std::fstream* file, int entries);
+std::vector<dynsiz> extract_entriesOF(std::fstream* file, int entries);
