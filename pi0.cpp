@@ -123,26 +123,60 @@ void dynsiz::operator<<=(word bs){//bs: amount of bits to be shifted
 }
 inline void dynsiz::pm(dynsiz b,bool plus){//private
 	ensureEqLen(&b);
-	word sum;
+	dblword sum;
 	word c=0;
 	for(int i=0;i<ds.size();i++){
 		if(plus){
 			sum=ds[i]+b.ds[i]+c;
-			if(sum+c<ds[i]) c=1; else c=0; //Set carry if overflow
+			c=sum>>wordbits;
 		}else{
 			sum=ds[i]-b.ds[i]-c; //Difference (sum, if b is negative)
-			if(sum+c>ds[i]) c=1; else c=0; //Set carry if overflow
+			c=(sum>>wordbits) & 1; //The result is 0xffxx for subtraction overflow
 		}
 		//printf("sum: %d, c: %d\n",sum,c);
-		ds[i]=sum;
+		ds[i]=sum & 0xff;
+	}
+	if(c==1){
+		if(plus){
+			expandSize(1);
+			ds[ds.size()-1]=1;
+		}else{
+			printf("**Negative number\n");
+		}
+	}
+}
+void dynsiz::operator+=(dynsiz& b){ pm(b,true); return;
+	/* //Appearently this is slower:
+	ensureEqLen(&b);
+	dblword sum;
+	word c=0;
+	for(int i=0;i<ds.size();i++){
+		sum=ds[i]+b.ds[i]+c;
+		c=sum>>wordbits;
+		ds[i]=sum & 0xff;
 	}
 	if(c==1){
 		expandSize(1);
 		ds[ds.size()-1]=1;
 	}
+	*/
 }
-void dynsiz::operator+=(dynsiz& b){ pm(b,true); }
-void dynsiz::operator-=(dynsiz& b){ pm(b,false); }
+void dynsiz::operator-=(dynsiz& b){ pm(b,false); return;
+	//** consider subtraction when this<b
+	/* //Appearently this is slower:
+	ensureEqLen(&b);
+	dblword sum;
+	word c=0;
+	for(int i=0;i<ds.size();i++){
+		sum=ds[i]-b.ds[i]-c; //Difference (sum, if b is negative)
+		c=(sum>>wordbits) & 1; //The result is 0xffxx for subtraction overflow
+		//printf("sum: %d, c: %d\n",sum,c);
+		ds[i]=sum & 0xff;
+	}
+	if(c==1){
+		printf("**Negative number\n");
+	}*/
+}
 void dynsiz::operator*=(dynsiz& b){
 	//printNums();printf("* ");b.printNums();
 	//printHex();printf("* ");b.printHex();
@@ -410,10 +444,8 @@ void nilakantha(){
     dynsiz p_nom("0x3"),p_den("0x1"),fac0("0x2");
     dynsiz add_nom(1),add_den(1),fac1(1),fac2(1);
     dynsiz one("0x1"),two("0x2"),four("0x4");
-    //one.ds[0]=1; two.ds[0]=2; four.ds[0]=4;
-    //p_nom.ds[0]=3;
-    //p_den.ds[0]=1;
-    //fac0.ds[0]=2;
+	//double testpi=3.0;
+	//double testn=2.0;
     
     fac1=fac0; fac1+=one;
     fac2=fac0; fac2+=two;
@@ -432,18 +464,18 @@ void nilakantha(){
         else
             p_nom-=add_nom;
         primeShortener(&p_den,&p_nom);
+		//p_nom.digitDiv(one,ten); printf(" / "); p_den.digitDiv(one,ten); //Write as decimal fraction
         
-        /*
-        if(i>50){
-          p_nom.digitDiv(p_den,ten);
-          printf(", (%d)\n",i);
-        }*/
         
         fac0+=two;
         fac1+=two;
         fac2+=two;
         printf("%d: ",i);
-        p_nom.digitDiv(p_den,ten);//(previously) weird i's: 22, 53 (now fixed)
+		//printf("%.18f\n",((i%2==0)?1:-1)*4.0/(testn*(testn+1.0)*(testn+2.0)));
+		p_nom.digitDiv(p_den,ten);//(previously) weird i's: 22, 53 (now fixed)
+		/*testpi+=((i%2==0)?1:-1)*4.0/(testn*(testn+1.0)*(testn+2.0));
+		testn+=2.0;
+		printf("%da:digits: %.18f\n",i,testpi);*/
     }
     p_nom.digitDiv(p_den,ten);
 }
@@ -678,7 +710,7 @@ int main(int argc, char** argv){
 		printf("%x\n",out[i]);
 	}
 	return 0;*/
-    arghandler(argc,argv); dynsiz aa("0xeFA0"); aa.printHex(); return 0;
+    //arghandler(argc,argv); dynsiz aa("0xeFA0"); aa.printHex(); return 0;
     //debugbool=false;
     dynsiz f(1);
     f.ds[0]=1;
