@@ -11,6 +11,7 @@
 #include <map>
 #include <filesystem>
 #include <algorithm>
+#include <print>
 
 typedef uint8_t word;
 typedef uint16_t dblword;
@@ -49,7 +50,7 @@ class dynsiz{
     dynsiz operator/(dynsiz d);//integer divison
     dynsiz legacy_divide(dynsiz d);//integer divison
     dynsiz operator%(dynsiz d);
-    void digitDiv(dynsiz b,dynsiz base,int maxdigits);//Divide number by b and express it as number in given base
+    std::string digitDiv(dynsiz b,dynsiz base,int maxdigits);//Divide number by b and express it as number in given base
     bool operator<(dynsiz b);
     bool operator>(dynsiz b);
     bool eqzero();
