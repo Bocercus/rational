@@ -3,16 +3,14 @@
 inline int iabs(int x) {return (x<0?-x:x);}
 inline int ramp(int x) {return (x>0?x:0);}
 
-class dynsiz;
-
 //bool debugbool;
 
-/*struct seriesConfig{
-	std::fstream* blabla;
+struct seriesConfig{
+	std::fstream* logfile;
 	uint8_t iter;
-	bool all;
-	dynsiz inputstuff;//arrayish
-};*/
+	bool print_all;
+	std::vector<dynsiz> inputNumbs;//arrayish
+};
 
 dynsiz::dynsiz(int n){//Init n words filled with zeros
 	ds.assign(n,0);
@@ -315,7 +313,7 @@ bool dynsiz::eqzero(){
 //Structure of (binary) logfiles: [size of entry][null-terminator][entry]{repeat for each entry}
 std::vector<uint8_t> uint32_to_utf8(uint32_t num){
 	std::vector<uint8_t> out_arr;
-	printf("num: %d\n",num);
+	//printf("num: %d\n",num);
 	if(num>=(1<<21)){//UTF-8 stores max 21 bits (afaik)
 		printf("Number too large! %d\n",num);
 	} else if(num>=(1<<16)){//Max 21-bits -> 4 UTF-8 bytes: 11110uvv 10vvwwww 10xxxxyy 10yyzzzz
@@ -343,7 +341,7 @@ inline void append_entries2f(std::fstream* file, dynsiz* entries, int ent_arr_si
 	//**ensure correct endian-ness
 	file->seekp(0,std::ios_base::end);
 	std::streampos f_pos = file->tellg();
-	std::print("File size before: {}\n",static_cast<uint16_t>(f_pos));
+	//std::print("File size before: {}\n",static_cast<uint16_t>(f_pos));
 	uint32_t ent_size=0;//dynsiz ent_size(1),one("0x1");
 	std::vector<uint8_t> siz_out_arr;
 	for(int i=0;i<ent_arr_size;i++){
@@ -355,21 +353,41 @@ inline void append_entries2f(std::fstream* file, dynsiz* entries, int ent_arr_si
 	}
 	file->seekp(0,std::ios_base::end);
 	f_pos = file->tellg();
-	std::print("File size after: {}\n",static_cast<uint16_t>(f_pos));
+	//std::print("File size after: {}\n",static_cast<uint16_t>(f_pos));
 	file->flush();//**test this
 }
-std::vector<dynsiz> extract_entriesOF(std::fstream* file, int entries){
-	file->seekg(0, std::ios_base::beg);
+std::vector<dynsiz> extract_entriesOF(std::fstream* file, uint16_t entries, int startpos=0, bool relative=false){
+	//startpos=-1 means extract the entries from end of file
+	std::vector<dynsiz> ext_arr;
+	std::deque<std::streampos> pos_stack; // **std::fpos vs. std::streampos
+	//pos_stack.reserve(entries);
+	std::deque<uint32_t> siz_stack;
+	//siz_stack.reserve(entries);
+	std::streampos cur_pos, end_pos;
+	cur_pos = file->tellg();
+	file->seekg(0, std::ios_base::end);
+	end_pos = file->tellg();
+	if(startpos<-1){
+		printf("startpos must be greather than -2\n");
+		return ext_arr;
+	}
+	if(relative)
+		file->seekg(cur_pos);
+	else
+		file->seekg(0, std::ios_base::beg);
+
+	//std::print("typeid(abcde) {}",typeid(abcde).name()); // \# include <typeinfo>
 	char* buf;
 	uint32_t siz;
 	uint8_t extra_bytes;
-	std::vector<dynsiz> ext_arr;
-	for(int e=0;e<entries;e++){
+	uint16_t e=0;
+	while(e<entries && (file->tellg())<end_pos){ //Here the positions and sizes of the entry data are found
 		//Get size byte(s) from UTF-8 format
 		buf=new char[1];
 		file->read(buf, 1);
 		extra_bytes=0;
 		//printf("First byte: %x %x %x %x\n",buf[0],buf[0] & 0xE0,buf[0] & 0xF0,buf[0] & 0xF8);
+		//First byte determines amount of extra bytes for the size
 		if((buf[0] & 0x80)==0){//1 UTF-8 byte: 0xxxxxxx
 			siz=buf[0];
 		} else if((buf[0] & 0xE0)==0xC0){//2 UTF-8 bytes: 110xxxxx ...
@@ -393,13 +411,35 @@ std::vector<dynsiz> extract_entriesOF(std::fstream* file, int entries){
 			siz<<=6;
 			siz |= buf[0] & 0x3F;
 		}
-		std::streampos f_pos = file->tellg();
-		std::print("size: {}, pos: {}\n",siz,static_cast<uint16_t>(f_pos));
 		delete[] buf;
-		buf=new char[siz];
-		file->read(buf, siz);
-		dynsiz ds_buf(siz);
-		std::copy(buf, buf+siz, ds_buf.ds.data());
+		//**pop
+		if(siz_stack.size()>=entries){
+			pos_stack.pop_front();
+			siz_stack.pop_front();
+		}
+		pos_stack.push_back(file->tellg()); //Save start position of entry data
+		siz_stack.push_back(siz);
+		file->seekg(siz, std::ios_base::cur); //Skip to next entry size info
+
+		//std::streampos f_pos = file->tellg();
+		//std::print("size: {}, pos: {}\n",siz,static_cast<uint16_t>(f_pos));
+
+		if(entries!=-1 && startpos==0)
+			e++;
+		else if(startpos>0)
+			startpos--;
+	}
+	/*std::println("while term for entries {} startpos {} relative {}",entries,startpos,relative);
+	for(int j : pos_stack)
+		std::println("pos {}",j);
+	for(int j : siz_stack)
+		std::println("siz {}",j);*/
+	for(e=0;e<siz_stack.size();e++){
+		file->seekg(pos_stack[e]);
+		buf=new char[siz_stack[e]];
+		file->read(buf, siz_stack[e]);
+		dynsiz ds_buf(siz_stack[e]);
+		std::copy(buf, buf+siz_stack[e], ds_buf.ds.data());
 		ext_arr.push_back( ds_buf );
 		//ds_buf.printHex();
 		delete[] buf;
@@ -431,21 +471,26 @@ void primeShortener(dynsiz* nom, dynsiz* denom){
 		}
 	}
 }
-void nilakantha(){
-	//Initially: p_nom=3, p_den=1, fac0=2
+void nilakantha(seriesConfig* sc){
 	//π = 3+∑_{n=0}^∞ (-1)^n*4/([2n+2][2n+3][2n+4])
 	//N/D+a/b = Nb/Db+Da/Db = (Nb+Da)/Db
-	dynsiz p_nom("0x3"),p_den("0x1"),fac0("0x2");
+	dynsiz p_nom(1),p_den(1),fac0(1); //Initially: p_nom=3, p_den=1, fac0=2
+	p_nom=sc->inputNumbs[0];
+	p_den=sc->inputNumbs[1];
+	fac0=sc->inputNumbs[2];
 	dynsiz add_nom(1),add_den(1),fac1(1),fac2(1);
-	dynsiz one("0x1"),two("0x2"),four("0x4");
+	dynsiz one("0x1"),two("0x2"),four("0x4"),ten("0xa");
+	word f0_2parity = (fac0 % four).ds[0];
 	//double testpi=3.0;
 	//double testn=2.0;
 
 	fac1=fac0; fac1+=one;
 	fac2=fac0; fac2+=two;
 
-	dynsiz ten(1); ten.ds[0]=10;
-	for(int i=0;i<200;i++){// 3/1, 19/6, 47/15, 1321/420,
+	std::println("Nilakantha series\nInitial values:\n    Nominator: {}\n  Denominator: {}",p_nom.digitDiv(one,ten),p_den.digitDiv(one,ten));
+	std::println("     Fraction: {}",p_nom.digitDiv(p_den,ten));
+	if(sc->logfile!=nullptr) std::println("Will save log."); else std::println("Will not save log.");
+	for(int i=0;i<sc->iter;i++){// 3/1, 19/6, 47/15, 1321/420,
 		add_den=fac0;
 		add_den*=fac1;
 		add_den*=fac2;
@@ -453,19 +498,26 @@ void nilakantha(){
 		p_nom*=add_den; p_den*=add_den;
 		//printf("add_nom: "); add_nom.printHex();
 		//printf("add_den: "); add_den.printHex();
-		if(i%2==0)
+		if(f0_2parity!=0)//**Ensure correct parity if an uneven number was saved
 			p_nom+=add_nom;
 		else
 			p_nom-=add_nom;
+		f0_2parity = 2 - f0_2parity;
 		primeShortener(&p_den,&p_nom);
-		printf("%d: ",i);
-		//std::print("{} / {}: ",p_nom.digitDiv(one,ten),p_den.digitDiv(one,ten));//Write as decimal fraction
+		std::println("{} / {}",p_nom.digitDiv(one,ten),p_den.digitDiv(one,ten));//Write as decimal fraction
 
 		fac0+=two;
 		fac1+=two;
 		fac2+=two;
+
+		if(sc->logfile!=nullptr){
+			append_entries2f(sc->logfile, &p_nom, 1);
+			append_entries2f(sc->logfile, &p_den, 1);
+			append_entries2f(sc->logfile, &fac0, 1);
+		}
+
 		//printf("%.18f\n",((i%2==0)?1:-1)*4.0/(testn*(testn+1.0)*(testn+2.0)));
-		std::println("{}",p_nom.digitDiv(p_den,ten));//(previously) weird i's: 22, 53 (now fixed)
+		std::println("{}: {}",i,p_nom.digitDiv(p_den,ten));//(previously) weird i's: 22, 53 (now fixed)
 		//printf("%s\n",p_nom.digitDiv(p_den,ten).c_str()); //**Probably bad practice, the package <print> seem to fix it using std::print from C++23
 		/*testpi+=((i%2==0)?1:-1)*4.0/(testn*(testn+1.0)*(testn+2.0));
 		testn+=2.0;
@@ -514,16 +566,18 @@ inline void arghandler(int argc, char** argv){
 		-f, --filename: output file name
 	*/
 	//**Add timer, maybe instead use: using namespace std::chrono; steady_clock::time_point clock_begin,clock_end; clock_begin = steady_clock::now();
+	//**Maybe add byte count before and after
 	//**Maybe add power series a^b = ∑_{n=0}^∞ (b choose n)*(x-1)^n, where (b choose n)=b*(b-1)(b-2)...(b-n+1)/n!
 	//**Exponential: ∑_{n=0}^∞ x^n/n!
 	//**Maybe for -d set i=0 and let all algos print results after loop
+	//File layout: "v<version_num><algoChar>[...]"
+	seriesConfig sc;
 	std::fstream logfile; //Creating fstream for loading and saving log ((((ofstream will be created for same filepath))))
-	int iter=1; //Default amount of iterations of the series (may be overwritten by argv if given)
+	sc.iter=1; //Default amount of iterations of the series (may be overwritten by argv if given)
+	sc.logfile=&logfile;
 	char algoChar=-1;
 	//enum {none=-1, euler, nilakantha, wallis} algo;
-	//algo=none;
-	bool savelog=false; //**Currently unused
-	bool outp_all=false; //**Currently unused
+	sc.print_all=false; //**Currently unused
 	std::string filename="";
 	enum eFlags {
 		flag_algo, flag_all, flag_help, flag_iter, flag_filename
@@ -550,12 +604,16 @@ inline void arghandler(int argc, char** argv){
 		switch(str2flag[argv[i]]){
 			case flag_algo:
 				if(i+1<argc){ //If parameter has been specified
+					if(algoChar!=-1){
+						printf("Multiple algorithms set\n");
+						return;
+					}
 					algoChar=argv[i+1][0];
 					i++; //Skip over read char
 				}
 			break;
 			case flag_all:
-				outp_all=true;
+				sc.print_all=true;
 			break;
 			case flag_help:
 				printf("%s\n",help_msg);
@@ -563,15 +621,16 @@ inline void arghandler(int argc, char** argv){
 			case flag_iter:
 				if(i+1<argc){ //If parameter has been specified
 					try{//Check if parameter is indeed a number
-						iter = std::stoi(argv[i+1],nullptr,10); // load amount of iterations (dec)
+						sc.iter = std::stoi(argv[i+1],nullptr,10); // load amount of iterations (dec)
 					} catch(const std::invalid_argument& ia){
 						printf("%s couldn't be passed as an integer",argv[i+1]);
 					}
 					i++; //Skip over read number
 				}else{
 					printf("Please specify number after \"-i\"");
+					return;
 				}
-				printf("iter+3=%d\n",iter+3);
+				//printf("iter+3=%d\n",sc.iter+3);
 			break;
 			case flag_filename:
 				if(i+1<argc){ //If parameter has been specified
@@ -579,6 +638,7 @@ inline void arghandler(int argc, char** argv){
 					i++; //Skip over read filename
 				}else{
 					printf("Please specify filename after \"-f\"");
+					return;
 				}
 			break;
 			default:
@@ -595,24 +655,47 @@ inline void arghandler(int argc, char** argv){
 			printf("Error loading file\n");
 			return;
 		}
+		dynsiz pv_ds(p_version);
 		if(log_alreadyx){
-			/*char* ftestbuf=new char[4];
-			logfile.read(ftestbuf,4);
-			for(int i=0;i<4;i++){
-				printf("%d ",ftestbuf[i]);
+			//**Set sc.logfile using file
+			std::vector<dynsiz> x = extract_entriesOF(&logfile, 3);
+			/*x[0].printHex();
+			x[1].printHex();
+			x[2].printHex();*/
+			if(x[0].ds.size()!=1 || x[0].ds[0]!=0x76){
+				printf("Initial entry not v (version)\n");
+				//**exit
 			}
-			printf("\n");
-			delete[] ftestbuf;*/
-		} else {}
+			/*
+			if(x[1].ds.size()!=1 || x[1].ds[0]!=p_version){
+				printf("Version mismatch\n");
+				// **exit
+			}*/
+			if(x[2].ds.size()!=1){
+				printf("AlgoChar size mismatch\n");
+				//**exit
+			}
+			algoChar = x[2].ds[0];
+		} else if(algoChar!=-1){
+			//Init file
+			dynsiz initout[]={dynsiz("0x76"), pv_ds, dynsiz(1)}; //Adding: "v<version_num><algoChar>"
+			initout[2].ds[0] = algoChar;
+			append_entries2f(&logfile, initout, 3);
+		}
 		//dynsiz ftestout[]={dynsiz(4096)};
 		//ftestout[0].ds[384]=5; ftestout[0].ds[3]=34;
 		//append_entries2f(&logfile, ftestout, 1);
 
-		dynsiz ftestout[]={dynsiz(260), dynsiz("0x5ef")};
+		/*dynsiz ftestout[]={dynsiz(260), dynsiz("0x5ef")};
 		append_entries2f(&logfile, ftestout, 2);
-		extract_entriesOF(&logfile, 1);
+		extract_entriesOF(&logfile, 1);*/
 
 		//printf("fs_ex: %d\n",fs_ex);
+	} else
+		sc.logfile = nullptr;
+	if(algoChar==-1){
+		printf("No algorithm found/chosen\n");
+		return;//**Maybe use goto to ensure cleanup
 	}
 
 	switch(algoChar){
@@ -622,7 +705,24 @@ inline void arghandler(int argc, char** argv){
 		break;
 		case 'n':
 			//algo=nilakantha;
-			printf("Nilakantha's\n");
+			//File layout: "v<version_num>n<p_nom><p_den><fac0><p_nom><p_den>[...]"
+			//printf("Nilakantha's\n");
+			if(log_alreadyx){//File exists
+				std::vector<dynsiz> x = extract_entriesOF(&logfile, 3, -1); //Get: p_nom, p_den, fac0
+				sc.inputNumbs.push_back(x[0]);
+				sc.inputNumbs.push_back(x[1]);
+				sc.inputNumbs.push_back(x[2]);
+			} else {
+				//From scratch
+				sc.inputNumbs.push_back(dynsiz("0x3")); //p_nom
+				sc.inputNumbs.push_back(dynsiz("0x1")); //p_den
+				sc.inputNumbs.push_back(dynsiz("0x2")); //fac0
+				if(sc.logfile!=nullptr){
+					//Addding initNumbs to logfile
+					append_entries2f(sc.logfile, sc.inputNumbs.data(), 3);
+				}
+			}
+			nilakantha(&sc);
 		break;
 		case 'w':
 			//algo=wallis;
@@ -687,7 +787,7 @@ void div_time_test(){
 	cc.printHex(); aa.div_remp->printHex();
 }
 int main(int argc, char** argv){
-	printf("C++ version: %d\n",__cplusplus);
+	printf("C++ version: %ld\n",__cplusplus);
 	//(a+bx+cx²+...)(d+ex+fx²+...)=a(d+ex+fx²)+bx(d+ex+fx²)+cx²(d+ex+fx²)=(ad+aex+afx²)+(bdx+bex²+bfx³)+(cdx²+cex³+cfx⁴)=ad+x(ae+bd)+x²(af+be+cd)+x³(bf+ce)+x⁴cf
 	/*uint32_t ab=0b11111111111;
 	std::vector<uint8_t> out;
@@ -696,10 +796,24 @@ int main(int argc, char** argv){
 		printf("%x\n",out[i]);
 	}
 	return 0;*/
-	//arghandler(argc,argv); dynsiz aa("0xeFA0"); aa.printHex(); return 0;
+	/*std::fstream logfile;
+	logfile.open("./that_pi",std::fstream::in | std::fstream::out | std::fstream::binary | std::fstream::app);
+	if(!logfile.is_open()){
+		printf("Error loading file\n");
+		return 0;
+	}
+	extract_entriesOF(&logfile, 3);
+	extract_entriesOF(&logfile, 2, 0, true);
+	extract_entriesOF(&logfile, 2, 1);
+	extract_entriesOF(&logfile, 4, -1);
+	extract_entriesOF(&logfile, 64, 4);
+	logfile.close();
+	return 0;*/
+	arghandler(argc,argv); return 0;
 	//debugbool=false;
-	nilakantha(); //wallis(f);
+	//nilakantha(); //wallis(f);
 	return 0;
+	dynsiz aa("0xeFA0"); aa.printHex();
 	dynsiz f("0x1");
 	dynsiz one(1),two(1);
 	one.ds[0]=1; two.ds[0]=2;

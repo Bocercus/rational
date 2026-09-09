@@ -12,12 +12,15 @@
 #include <filesystem>
 #include <algorithm>
 #include <print>
+#include <deque>
 
 typedef uint8_t word;
 typedef uint16_t dblword;
 #define wordones 0xff
 #define wordbits 8
 #define carryones 0xff00
+
+#define p_version "0x1"
 
 class dynsiz{
     public:
@@ -56,4 +59,4 @@ class dynsiz{
     bool eqzero();
 };
 inline void append_entries2f(std::fstream* file, dynsiz* entries, int ent_arr_size);
-std::vector<dynsiz> extract_entriesOF(std::fstream* file, int entries);
+std::vector<dynsiz> extract_entriesOF(std::fstream* file, uint16_t entries, int startpos, bool relative);
