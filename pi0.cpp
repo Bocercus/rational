@@ -7,9 +7,11 @@ inline int ramp(int x) {return (x>0?x:0);}
 
 struct seriesConfig{
 	std::fstream* logfile;
-	uint8_t iter;
+	uint16_t iter;
 	bool print_all;
+	dynsiz base;
 	std::vector<dynsiz> inputNumbs;//arrayish
+	seriesConfig() : base("0xa") {};// **maybe declare other members?
 };
 
 dynsiz::dynsiz(int n){//Init n words filled with zeros
@@ -277,14 +279,14 @@ std::string dynsiz::digitDiv(dynsiz b,dynsiz base,int maxdigits=20){//Divide num
 
 	if(digits.size()>0)
 		for(std::vector<word>::reverse_iterator i=digits.rbegin();i!=digits.rend();i++) //Append from last element in digits
-			out_str+=std::to_string(*i);
+			out_str+=std::format("{:x}",*i);
 	else
 		out_str+='0';
 	uint16_t i;
 	if(fdigits.size()>0)
 		out_str+='.';
 	for(i=0;i<fdigits.size();i++)
-		out_str+=std::to_string(fdigits[i]); //printf("%d",fdigits[i]);
+		out_str+=std::format("{:x}",fdigits[i]); //printf("%d",fdigits[i]);
 	//printf("\n");
 	return out_str;
 }
@@ -479,18 +481,21 @@ void nilakantha(seriesConfig* sc){
 	p_den=sc->inputNumbs[1];
 	fac0=sc->inputNumbs[2];
 	dynsiz add_nom(1),add_den(1),fac1(1),fac2(1);
-	dynsiz one("0x1"),two("0x2"),four("0x4"),ten("0xa");
+	dynsiz one("0x1"),two("0x2"),four("0x4");
 	word f0_2parity = (fac0 % four).ds[0];
+	std::chrono::steady_clock::time_point clock_before, clock_after; // **Maybe: using namespace std::chrono;
+	//using namespace std::chrono; steady_clock::time_point clock_begin,clock_end; clock_begin = steady_clock::now();
 	//double testpi=3.0;
 	//double testn=2.0;
 
 	fac1=fac0; fac1+=one;
 	fac2=fac0; fac2+=two;
 
-	std::println("Nilakantha series\nInitial values:\n    Nominator: {}\n  Denominator: {}",p_nom.digitDiv(one,ten),p_den.digitDiv(one,ten));
-	std::println("     Fraction: {}",p_nom.digitDiv(p_den,ten));
+	std::println("Nilakantha series (pi)\nInitial values:\n    Nominator: {}\n  Denominator: {}",p_nom.digitDiv(one,sc->base),p_den.digitDiv(one,sc->base));
+	std::println("     Fraction: {}",p_nom.digitDiv(p_den,sc->base));
 	if(sc->logfile!=nullptr) std::println("Will save log."); else std::println("Will not save log.");
-	for(int i=0;i<sc->iter;i++){// 3/1, 19/6, 47/15, 1321/420,
+	clock_before = std::chrono::steady_clock::now();
+	for(uint16_t i=0;i<sc->iter;i++){// 3/1, 19/6, 47/15, 1321/420,
 		add_den=fac0;
 		add_den*=fac1;
 		add_den*=fac2;
@@ -502,9 +507,10 @@ void nilakantha(seriesConfig* sc){
 			p_nom+=add_nom;
 		else
 			p_nom-=add_nom;
-		f0_2parity = 2 - f0_2parity;
+		f0_2parity = 2 - f0_2parity; //Switching between adding/subtracting
 		primeShortener(&p_den,&p_nom);
-		std::println("{} / {}",p_nom.digitDiv(one,ten),p_den.digitDiv(one,ten));//Write as decimal fraction
+		if(sc->print_all)
+			std::println("{} = {} / {}",p_nom.digitDiv(p_den,sc->base),p_nom.digitDiv(one,sc->base),p_den.digitDiv(one,sc->base));//Write as decimal fraction
 
 		fac0+=two;
 		fac1+=two;
@@ -517,14 +523,17 @@ void nilakantha(seriesConfig* sc){
 		}
 
 		//printf("%.18f\n",((i%2==0)?1:-1)*4.0/(testn*(testn+1.0)*(testn+2.0)));
-		std::println("{}: {}",i,p_nom.digitDiv(p_den,ten));//(previously) weird i's: 22, 53 (now fixed)
-		//printf("%s\n",p_nom.digitDiv(p_den,ten).c_str()); //**Probably bad practice, the package <print> seem to fix it using std::print from C++23
 		/*testpi+=((i%2==0)?1:-1)*4.0/(testn*(testn+1.0)*(testn+2.0));
 		testn+=2.0;
 		printf("%da:digits: %.18f\n",i,testpi);*/
 	}
-	std::println("{}",p_nom.digitDiv(p_den,ten));
-	//printf("%s\n",p_nom.digitDiv(p_den,ten).c_str());
+	//Print timing:
+	clock_after = std::chrono::steady_clock::now();
+	std::chrono::duration<float> elapsed_time = clock_after - clock_before;
+	if(sc->iter>0)
+		std::println("Calculated {} term(s) in {} seconds.",sc->iter,elapsed_time.count());
+	std::println("{} = {} / {}",p_nom.digitDiv(p_den,sc->base),p_nom.digitDiv(one,sc->base),p_den.digitDiv(one,sc->base));
+	//printf("%s\n",p_nom.digitDiv(p_den,sc->base).c_str());
 }
 void wallis(dynsiz f,std::ofstream* ologfile=nullptr){//Wallis product
 	//Initially: f=1, nom=2, den=1
@@ -561,44 +570,50 @@ inline void arghandler(int argc, char** argv){
 			-A w: Walli's
 		-a, --all: output all to screen (and file), otherwise only first and last
 		((-d: display most recent value in file))
+		-b, --base: set number base of printed output
 		-h, --help: help
 		-i, --iterations: iterations of algorithm
 		-f, --filename: output file name
 	*/
-	//**Add timer, maybe instead use: using namespace std::chrono; steady_clock::time_point clock_begin,clock_end; clock_begin = steady_clock::now();
-	//**Maybe add byte count before and after
 	//**Maybe add power series a^b = ∑_{n=0}^∞ (b choose n)*(x-1)^n, where (b choose n)=b*(b-1)(b-2)...(b-n+1)/n!
 	//**Exponential: ∑_{n=0}^∞ x^n/n!
 	//**Maybe for -d set i=0 and let all algos print results after loop
 	//File layout: "v<version_num><algoChar>[...]"
 	seriesConfig sc;
 	std::fstream logfile; //Creating fstream for loading and saving log ((((ofstream will be created for same filepath))))
+	std::streampos lf_ps_before, lf_ps_after;
 	sc.iter=1; //Default amount of iterations of the series (may be overwritten by argv if given)
 	sc.logfile=&logfile;
 	char algoChar=-1;
 	//enum {none=-1, euler, nilakantha, wallis} algo;
-	sc.print_all=false; //**Currently unused
+	sc.print_all=false;
 	std::string filename="";
 	enum eFlags {
-		flag_algo, flag_all, flag_help, flag_iter, flag_filename
+		flag_algo, flag_all, flag_base, flag_help, flag_iter, flag_filename
 	};
 	std::map<std::string,eFlags> str2flag={
 		{"-A",flag_algo},
 		{"-a",flag_all},{"--all",flag_all},
+		{"-b",flag_base},{"--base",flag_base},
 		{"-h",flag_help},{"--help",flag_help},
 		{"-i",flag_iter},{"--iterations",flag_iter},
 		{"-f",flag_filename},{"--filename",flag_filename}
 	};
-	const char* help_msg="Flags:\n\
-	-A: Algorithm\n\
-		-A e: Euler's number\n\
-		-A n: Nilakantha\n\
-		-A w: Walli's\n\
-	-a, --all: output all to screen (and file), otherwise only first and last\n\
-	((-d: display most recent value in file))\n\
-	-h, --help: help\n\
-	-i, --iterations: iterations of algorithm\n\
-	-f, --filename: output file name";
+	const char* help_msg="Flags:\n"
+	"-A: Algorithm\n"
+	"	-A e: Euler's number\n"
+	"	-A n: Nilakantha\n"
+	"	-A w: Walli's\n"
+	"-a, --all: output all to screen (and file), otherwise only first and last\n"
+	"-b, --base: set number base of printed output\n"
+	"((-d: display most recent value in file))\n"
+	"-h, --help: help\n"
+	"-i, --iterations: iterations of algorithm (in decimal)\n"
+	"-f, --filename: output file name";
+
+	if(argc<2){
+		printf("%s\n",help_msg); return;
+	}
 
 	for(int i=1;i<argc;i++){//argv[0] is skipped
 		switch(str2flag[argv[i]]){
@@ -615,19 +630,44 @@ inline void arghandler(int argc, char** argv){
 			case flag_all:
 				sc.print_all=true;
 			break;
+			case flag_base:
+				if(i+1<argc){
+					try{
+						uint16_t b_input;
+						b_input = std::stoi(argv[i+1],nullptr,10); // load amount of iterations (dec)
+						if(b_input<2){
+							printf("base must be greater than 1\n"); return;
+						} else if(b_input>16){
+							printf("base must be less than 17\n"); return;
+						}
+						sc.base.ds[0] = b_input;
+						i++;
+					} catch(const std::invalid_argument& ia){
+						printf("%s couldn't be passed as an integer\n",argv[i+1]); return;
+					}
+				}else{
+					printf("Please specify number after \"-b\"\n");
+					return;
+				}
+				//**todo
+			break;
 			case flag_help:
-				printf("%s\n",help_msg);
+				printf("%s\n",help_msg); return;
 			break;
 			case flag_iter:
 				if(i+1<argc){ //If parameter has been specified
 					try{//Check if parameter is indeed a number
-						sc.iter = std::stoi(argv[i+1],nullptr,10); // load amount of iterations (dec)
+						uint32_t i_input = std::stoi(argv[i+1],nullptr,10); // load amount of iterations (dec)
+						if(i_input>0xffff){
+							printf("iterations must be less than 65536\n"); return;
+						}
+						sc.iter = i_input;
 					} catch(const std::invalid_argument& ia){
-						printf("%s couldn't be passed as an integer",argv[i+1]);
+						printf("%s couldn't be passed as an integer\n",argv[i+1]); return;
 					}
 					i++; //Skip over read number
 				}else{
-					printf("Please specify number after \"-i\"");
+					printf("Please specify number after \"-i\"\n");
 					return;
 				}
 				//printf("iter+3=%d\n",sc.iter+3);
@@ -655,6 +695,8 @@ inline void arghandler(int argc, char** argv){
 			printf("Error loading file\n");
 			return;
 		}
+		logfile.seekp(0, std::ios_base::end);
+		lf_ps_before=logfile.tellp();
 		dynsiz pv_ds(p_version);
 		if(log_alreadyx){
 			//**Set sc.logfile using file
@@ -718,7 +760,7 @@ inline void arghandler(int argc, char** argv){
 				sc.inputNumbs.push_back(dynsiz("0x1")); //p_den
 				sc.inputNumbs.push_back(dynsiz("0x2")); //fac0
 				if(sc.logfile!=nullptr){
-					//Addding initNumbs to logfile
+					//Adding initNumbs to logfile
 					append_entries2f(sc.logfile, sc.inputNumbs.data(), 3);
 				}
 			}
@@ -730,6 +772,14 @@ inline void arghandler(int argc, char** argv){
 		break;
 		default:
 			printf("Unknown algorithm: %c\n",algoChar);
+	}
+	if(sc.logfile!=nullptr){
+		logfile.seekp(0, std::ios_base::end);
+		lf_ps_after=logfile.tellp();
+		std::streamoff file_app = lf_ps_after - lf_ps_before;
+		if(file_app>0){
+			std::println("Wrote {} byte(s) to {}",file_app,filename);
+		}
 	}
 	logfile.close();
 

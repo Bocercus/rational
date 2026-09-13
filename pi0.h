@@ -13,6 +13,7 @@
 #include <algorithm>
 #include <print>
 #include <deque>
+#include <format>
 
 typedef uint8_t word;
 typedef uint16_t dblword;
