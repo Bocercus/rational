@@ -449,8 +449,7 @@ std::vector<dynsiz> extract_entriesOF(std::fstream* file, uint16_t entries, int 
 	return ext_arr;
 }
 void primeShortener(dynsiz* nom, dynsiz* denom){
-	//**Maybe write parallelized version of this
-	int primes[]={2,3,5,7,11,13,17,19,23,29};//((2 omitted as denominator is never even))
+	word primes[]={2,3,5,7,11,13,17,19,23,29};//((2 omitted as denominator is never even))
 	dynsiz pr(1),nomdiv(1),dendiv(1),nommod(1),denmod(1);
 	for(int i=0;i<10;i++){
 		pr.ds[0] = primes[i];
@@ -471,6 +470,46 @@ void primeShortener(dynsiz* nom, dynsiz* denom){
 			dendiv=(*denom) / pr;
 			nommod=*(nom->div_remp);
 			denmod=*(denom->div_remp);
+		}
+	}
+}
+void primeShortenerThread(dynsiz n,dynsiz d,word prime,std::atomic<uint16_t>& fac){//This is only meant to be called by primeShortenerPar
+	dynsiz pr(1),ndiv(1),ddiv(1),nmod(1),dmod(1);
+	pr.ds[0]=prime;
+	ndiv=n / pr;
+	ddiv=d / pr;
+	nmod=*(n.div_remp);
+	dmod=*(d.div_remp);
+	while( nmod.eqzero() && dmod.eqzero() ){
+		n=ndiv;
+		d=ddiv;
+		fac+=1; //Found factor
+		ndiv=n / pr;
+		ddiv=d / pr;
+		nmod=*(n.div_remp);
+		dmod=*(d.div_remp);
+	}
+}
+void primeShortenerPar(dynsiz* nom, dynsiz* denom){//Parallelized version of primeShortener (can be exchanged 1:1)
+	//Divides nominator and denominator of fraction by greatest common divisor
+	word primes[]={2,3,5,7,11,13,17,19,23,29};
+	std::vector<std::thread> threads;
+	threads.reserve(10);
+	std::array<std::atomic<uint16_t>,10> facs{{{0},{0},{0},{0},{0},{0},{0},{0},{0},{0}}}; //How many times each prime is a factor
+	for(int i=0;i<10;i++)
+		threads.push_back(std::thread(primeShortenerThread,*nom,*denom,primes[i],std::ref(facs[i])));
+	for(auto& th : threads) th.join();
+
+	//Divide by the found factors
+	uint16_t j;
+	dynsiz pr(1);
+	for(int i=0;i<10;i++){
+		j=facs[i].load(std::memory_order_relaxed);
+		pr.ds[0] = primes[i];
+		while(j>0){
+			*nom = *nom / pr;
+			*denom = *denom / pr;
+			j--;
 		}
 	}
 }
@@ -510,7 +549,7 @@ void nilakantha(seriesConfig* sc){
 		else
 			p_nom-=add_nom;
 		f0_2parity = 2 - f0_2parity; //Switching between adding/subtracting
-		primeShortener(&p_den,&p_nom);
+		primeShortenerPar(&p_den,&p_nom);
 		if(sc->print_all)
 			std::println("{} = {} / {}",p_nom.digitDiv(p_den,sc->base),p_nom.digitDiv(one,sc->base),p_den.digitDiv(one,sc->base));//Write as decimal fraction
 
@@ -560,7 +599,7 @@ void wallis(seriesConfig* sc){//Wallis product
 		p_nom *= f; p_nom *= f;
 		f += one;
 		p_den *= f;
-		primeShortener(&p_den,&p_nom);
+		primeShortenerPar(&p_den,&p_nom);
 		if(sc->print_all)
 			std::println("{} = {} / {}",p_nom.digitDiv(p_den,sc->base),p_nom.digitDiv(one,sc->base),p_den.digitDiv(one,sc->base));
 		if(sc->logfile!=nullptr){//Save nominator, denominator and factor0 to logfile
@@ -621,10 +660,10 @@ inline void arghandler(int argc, char** argv){
 	"	-A n: Nilakantha\n"
 	"	-A w: Walli's\n"
 	"-a, --all: output all to screen (and file), otherwise only first and last\n"
-	"-b, --base: set number base of printed output\n"
+	"-b, --base: set number base of printed output (default value: 2*5)\n"
 	"((-d: display most recent value in file))\n"
 	"-h, --help: help\n"
-	"-i, --iterations: iterations of algorithm (in decimal)\n"
+	"-i, --iterations: iterations of algorithm (in decimal, default value: 1)\n"
 	"-f, --filename: output file name";
 
 	if(argc<2){
@@ -884,6 +923,11 @@ void div_time_test(){
 }
 int main(int argc, char** argv){
 	printf("C++ version: %ld\n",__cplusplus);
+	/*dynsiz ps_a("0x24c"),ps_b("0x3f");
+	ps_a.printHex(); ps_b.printHex();
+	primeShortenerPar(&ps_a,&ps_b);
+	ps_a.printHex(); ps_b.printHex();
+	return 0;*/
 	//(a+bx+cx²+...)(d+ex+fx²+...)=a(d+ex+fx²)+bx(d+ex+fx²)+cx²(d+ex+fx²)=(ad+aex+afx²)+(bdx+bex²+bfx³)+(cdx²+cex³+cfx⁴)=ad+x(ae+bd)+x²(af+be+cd)+x³(bf+ce)+x⁴cf
 	/*uint32_t ab=0b11111111111;
 	std::vector<uint8_t> out;
