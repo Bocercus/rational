@@ -449,6 +449,7 @@ std::vector<dynsiz> extract_entriesOF(std::fstream* file, uint16_t entries, int 
 	return ext_arr;
 }
 void primeShortener(dynsiz* nom, dynsiz* denom){
+	//**Maybe write parallelized version of this
 	int primes[]={2,3,5,7,11,13,17,19,23,29};//((2 omitted as denominator is never even))
 	dynsiz pr(1),nomdiv(1),dendiv(1),nommod(1),denmod(1);
 	for(int i=0;i<10;i++){
@@ -495,6 +496,7 @@ void nilakantha(seriesConfig* sc){
 	std::println("     Fraction: {}",p_nom.digitDiv(p_den,sc->base));
 	if(sc->logfile!=nullptr) std::println("Will save log."); else std::println("Will not save log.");
 	clock_before = std::chrono::steady_clock::now();
+	//main series loop
 	for(uint16_t i=0;i<sc->iter;i++){// 3/1, 19/6, 47/15, 1321/420,
 		add_den=fac0;
 		add_den*=fac1;
@@ -516,7 +518,7 @@ void nilakantha(seriesConfig* sc){
 		fac1+=two;
 		fac2+=two;
 
-		if(sc->logfile!=nullptr){
+		if(sc->logfile!=nullptr){//Save nominator, denominator and factor0 to logfile
 			append_entries2f(sc->logfile, &p_nom, 1);
 			append_entries2f(sc->logfile, &p_den, 1);
 			append_entries2f(sc->logfile, &fac0, 1);
@@ -529,38 +531,51 @@ void nilakantha(seriesConfig* sc){
 	}
 	//Print timing:
 	clock_after = std::chrono::steady_clock::now();
-	std::chrono::duration<float> elapsed_time = clock_after - clock_before;
-	if(sc->iter>0)
+	if(sc->iter>0){
+		std::chrono::duration<float> elapsed_time = clock_after - clock_before;
 		std::println("Calculated {} term(s) in {} seconds.",sc->iter,elapsed_time.count());
-	std::println("{} = {} / {}",p_nom.digitDiv(p_den,sc->base),p_nom.digitDiv(one,sc->base),p_den.digitDiv(one,sc->base));
+	}
+	std::print("{} = ",p_nom.digitDiv(p_den,sc->base));
+	std::println("{} / {}",p_nom.digitDiv(one,sc->base),p_den.digitDiv(one,sc->base));
 	//printf("%s\n",p_nom.digitDiv(p_den,sc->base).c_str());
 }
-void wallis(dynsiz f,std::ofstream* ologfile=nullptr){//Wallis product
-	//Initially: f=1, nom=2, den=1
-	dynsiz p_nom("0x2"),p_den("0x1"),one("0x1");
+void wallis(seriesConfig* sc){//Wallis product
+	dynsiz p_nom(1),p_den(1),f(1); //Initially: nom=2, den=1, f=1
+	p_nom=sc->inputNumbs[0];
+	p_den=sc->inputNumbs[1];
+	f=sc->inputNumbs[2];
 
-	dynsiz ten(1);
-	ten.ds[0]=10;
+	dynsiz one("0x1");
+	std::chrono::steady_clock::time_point clock_before, clock_after;
+	std::println("Wallis product (pi)\nInitial values:\n    Nominator: {}\n  Denominator: {}",p_nom.digitDiv(one,sc->base),p_den.digitDiv(one,sc->base));
+	std::println("     Fraction: {}",p_nom.digitDiv(p_den,sc->base));
+	if(sc->logfile!=nullptr) std::println("Will save log."); else std::println("Will not save log.");
 
+	clock_before = std::chrono::steady_clock::now();
 	//main series loop
-	for(int i=0;i<100;i++){//64
-		printf("i: %d, f: ",i);
-		//debugbool=(i==127);
-		f.printHex();
+	for(uint16_t i=0;i<sc->iter;i++){
+		//printf("i: %d, f: ",i);
 		p_den *= f;
 		f += one;
 		p_nom *= f; p_nom *= f;
 		f += one;
 		p_den *= f;
-		p_nom.printHex();
-		p_den.printHex();
-		/*printf("----\n");
-		f.printNums();
-		printf("----\n");*/
 		primeShortener(&p_den,&p_nom);
-		//printf("%s\n",p_nom.digitDiv(p_den,ten).c_str());
-		std::println("{}",p_nom.digitDiv(p_den,ten));
+		if(sc->print_all)
+			std::println("{} = {} / {}",p_nom.digitDiv(p_den,sc->base),p_nom.digitDiv(one,sc->base),p_den.digitDiv(one,sc->base));
+		if(sc->logfile!=nullptr){//Save nominator, denominator and factor0 to logfile
+			append_entries2f(sc->logfile, &p_nom, 1);
+			append_entries2f(sc->logfile, &p_den, 1);
+			append_entries2f(sc->logfile, &f, 1);
+		}
 	}
+	clock_after = std::chrono::steady_clock::now();
+	if(sc->iter>0){
+		std::chrono::duration<float> elapsed_time = clock_after - clock_before;
+		std::println("Calculated {} term(s) in {} seconds.",sc->iter,elapsed_time.count());
+	}
+	std::print("{} = ",p_nom.digitDiv(p_den,sc->base));
+	std::println("{} / {}",p_nom.digitDiv(one,sc->base),p_den.digitDiv(one,sc->base));
 }
 inline void arghandler(int argc, char** argv){
 	/* Flags:
@@ -578,6 +593,7 @@ inline void arghandler(int argc, char** argv){
 	//**Maybe add power series a^b = ∑_{n=0}^∞ (b choose n)*(x-1)^n, where (b choose n)=b*(b-1)(b-2)...(b-n+1)/n!
 	//**Exponential: ∑_{n=0}^∞ x^n/n!
 	//**Maybe for -d set i=0 and let all algos print results after loop
+	//**Maybe add -e for only saving last iteration
 	//File layout: "v<version_num><algoChar>[...]"
 	seriesConfig sc;
 	std::fstream logfile; //Creating fstream for loading and saving log ((((ofstream will be created for same filepath))))
@@ -649,7 +665,6 @@ inline void arghandler(int argc, char** argv){
 					printf("Please specify number after \"-b\"\n");
 					return;
 				}
-				//**todo
 			break;
 			case flag_help:
 				printf("%s\n",help_msg); return;
@@ -704,8 +719,13 @@ inline void arghandler(int argc, char** argv){
 			/*x[0].printHex();
 			x[1].printHex();
 			x[2].printHex();*/
+			if(x.size()==0){
+				printf("Unable to read from file\n");
+				logfile.close(); return;
+			}
 			if(x[0].ds.size()!=1 || x[0].ds[0]!=0x76){
 				printf("Initial entry not v (version)\n");
+				logfile.close(); return;
 				//**exit
 			}
 			/*
@@ -715,11 +735,14 @@ inline void arghandler(int argc, char** argv){
 			}*/
 			if(x[2].ds.size()!=1){
 				printf("AlgoChar size mismatch\n");
+				logfile.close(); return;
 				//**exit
 			}
 			algoChar = x[2].ds[0];
+			std::println("Successfully opened existing file: {}",filename);
 		} else if(algoChar!=-1){
 			//Init file
+			std::println("Creating new file: {}",filename);
 			dynsiz initout[]={dynsiz("0x76"), pv_ds, dynsiz(1)}; //Adding: "v<version_num><algoChar>"
 			initout[2].ds[0] = algoChar;
 			append_entries2f(&logfile, initout, 3);
@@ -737,7 +760,7 @@ inline void arghandler(int argc, char** argv){
 		sc.logfile = nullptr;
 	if(algoChar==-1){
 		printf("No algorithm found/chosen\n");
-		return;//**Maybe use goto to ensure cleanup
+		logfile.close(); return;
 	}
 
 	switch(algoChar){
@@ -745,12 +768,14 @@ inline void arghandler(int argc, char** argv){
 			//algo=euler;
 			printf("Euler's\n");
 		break;
-		case 'n':
-			//algo=nilakantha;
+		case 'n': //Nilakantha series
 			//File layout: "v<version_num>n<p_nom><p_den><fac0><p_nom><p_den>[...]"
-			//printf("Nilakantha's\n");
 			if(log_alreadyx){//File exists
 				std::vector<dynsiz> x = extract_entriesOF(&logfile, 3, -1); //Get: p_nom, p_den, fac0
+				if(x.size()<3){
+					printf("Expected 3 entries after header entries. Only found: %lu\n",x.size());
+					logfile.close(); return;
+				}
 				sc.inputNumbs.push_back(x[0]);
 				sc.inputNumbs.push_back(x[1]);
 				sc.inputNumbs.push_back(x[2]);
@@ -766,9 +791,28 @@ inline void arghandler(int argc, char** argv){
 			}
 			nilakantha(&sc);
 		break;
-		case 'w':
-			//algo=wallis;
-			printf("Walli's\n");
+		case 'w': //Walli's product
+			//File layout: "v<version_num>w<p_nom><p_den><f><p_nom><p_den>[...]"
+			if(log_alreadyx){//File exists
+				std::vector<dynsiz> x = extract_entriesOF(&logfile, 3, -1); //Get: p_nom, p_den, f
+				if(x.size()<3){
+					printf("Expected 3 entries after header entries. Only found: %lu\n",x.size());
+					logfile.close(); return;
+				}
+				sc.inputNumbs.push_back(x[0]);
+				sc.inputNumbs.push_back(x[1]);
+				sc.inputNumbs.push_back(x[2]);
+			} else {
+				//From scratch
+				sc.inputNumbs.push_back(dynsiz("0x2")); //p_nom
+				sc.inputNumbs.push_back(dynsiz("0x1")); //p_den
+				sc.inputNumbs.push_back(dynsiz("0x1")); //f
+				if(sc.logfile!=nullptr){
+					//Adding initNumbs to logfile
+					append_entries2f(sc.logfile, sc.inputNumbs.data(), 3);
+				}
+			}
+			wallis(&sc);
 		break;
 		default:
 			printf("Unknown algorithm: %c\n",algoChar);
@@ -779,6 +823,8 @@ inline void arghandler(int argc, char** argv){
 		std::streamoff file_app = lf_ps_after - lf_ps_before;
 		if(file_app>0){
 			std::println("Wrote {} byte(s) to {}",file_app,filename);
+		} else {
+			std::println("Nothing was written to {}",filename);
 		}
 	}
 	logfile.close();
