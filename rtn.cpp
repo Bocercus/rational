@@ -1,4 +1,8 @@
-#include "pi0.h"
+/*
+	Written by Niklas Stentoft Truelsen, 2026
+	Except for a few LLM generated lines (see comments)
+*/
+#include "rtn.h"
 
 inline int iabs(int x) {return (x<0?-x:x);}
 inline int ramp(int x) {return (x>0?x:0);}
@@ -623,7 +627,6 @@ inline void arghandler(int argc, char** argv){
 			-A n: Nilakantha
 			-A w: Walli's
 		-a, --all: output all to screen (and file), otherwise only first and last
-		((-d: display most recent value in file))
 		-b, --base: set number base of printed output
 		-h, --help: help
 		-i, --iterations: iterations of algorithm
@@ -661,7 +664,6 @@ inline void arghandler(int argc, char** argv){
 	"	-A w: Walli's\n"
 	"-a, --all: output all to screen (and file), otherwise only first and last\n"
 	"-b, --base: set number base of printed output (default value: 2*5)\n"
-	"((-d: display most recent value in file))\n"
 	"-h, --help: help\n"
 	"-i, --iterations: iterations of algorithm (in decimal, default value: 1)\n"
 	"-f, --filename: output file name";
