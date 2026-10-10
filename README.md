@@ -1,5 +1,5 @@
 # R@ional
-I made a multiprecision arithmetic class for the challenge of it. It is a tool for approximating pi and other (often irrational) numbers using multiprecision integers.
+I made a multiprecision arithmetic class for the challenge of it. It is a tool for approximating π and other (often irrational) numbers using multiprecision integers.
 ## Build
 This may be built using g++ with the following command:  
 ```g++ -std=c++23 ./rtn.cpp -o ./rtn```  
@@ -11,6 +11,7 @@ You may use R@ional by:
 ```
 where flags could be:  
 ```-A```: Algorithm  
+```-A e```: Complex exponential function exp([a+b·i]/c) (followed by integers a, b and c separated by space)  
 ```-A n```: Nilakantha's series  
 ```-A w```: Walli's series  
 ```-a, --all```: output all to screen (and file), otherwise only first and last  
@@ -20,13 +21,17 @@ where flags could be:
 ```-f, --filename```: output file name  
 
 ## Examples
-Approximate pi using the Nilakantha series and show all intermediate iterations:  
+Approximate π using the Nilakantha series and show all intermediate iterations:  
 ```
 ./rtn -A n -i 20 -a
 ```  
-Approximate pi using the Wallis product and save to file this_pi:  
+Approximate π using the Wallis product and save to file this_pi:  
 ```
 ./rtn -A n -i 20 -f this_pi
+```  
+Approximate $e^{-22i/7}$ ($\approx e^{-\pi}$) using the complex exponential function:  
+```
+./rtn -A e 0 -22 7 -i 20
 ```  
 Compute 40 more iteration of existing file and display the output in binary:  
 ```

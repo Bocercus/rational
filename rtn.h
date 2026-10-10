@@ -16,6 +16,7 @@
 #include <format>
 #include <thread>
 #include <atomic>
+#include <utility>
 
 typedef uint8_t word;
 typedef uint16_t dblword;
@@ -29,6 +30,7 @@ class dynsiz{
 	public:
 	std::vector<word> ds; //Number array ( ds[0] least significant figure )
 	dynsiz* div_remp; //Pointer to remainder of integer division
+	bool negat; //Sign of number (false: positve, true: negative. I don't know if "-0" will cause issues)
 	dynsiz(int n);
 	dynsiz(std::string numstr);
 	~dynsiz();
@@ -45,6 +47,7 @@ class dynsiz{
 	bool expandSize(int n);
 	void printNums();
 	void printHex();
+	dynsiz getDSsign();
 	void ensureEqLen(dynsiz* bptr);//Ensure pointed synsize have equal size as this object
 	void operator<<=(word bs);//bs: amount of bits to be shifted
 	private:
@@ -56,7 +59,7 @@ class dynsiz{
 	dynsiz operator/(dynsiz d);//integer divison
 	dynsiz legacy_divide(dynsiz d);//integer divison
 	dynsiz operator%(dynsiz d);
-	std::string digitDiv(dynsiz b,dynsiz base,int maxdigits);//Divide number by b and express it as number in given base
+	std::string digitDiv(dynsiz b,dynsiz base,int maxdigits,bool unaryPlus);//Divide number by b and express it as number in given base
 	bool operator<(dynsiz b);
 	bool operator>(dynsiz b);
 	bool eqzero();
